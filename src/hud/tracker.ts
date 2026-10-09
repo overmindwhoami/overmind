@@ -2,10 +2,14 @@ import * as THREE from 'three';
 import { HUD, RATE, damp } from '../../design-system/motion';
 import spec from '../engine/tower-spec.json';
 import type { Instance } from '../engine/tower';
-import { SIGNAL, type Signal } from './signal';
+import { MEDIA, follow, isPlaying, type Source } from './source';
 
-/** What the instrument says about its target: a title, a note, and the pictures its boxes look through. */
-export interface TrackerContent { key: string; title: string; note: string; signals: Signal[] }
+/**
+ * What the instrument shows for its target, as the reference does for a project: a name (typed in capitals), a subline
+ * (client · year · host ↗) and one media source that every box looks through. `key` changes when the content does
+ * (a new slot written on the live disk), which locks on again.
+ */
+export interface TrackerContent { key: string; name: string; client: string; year: string; host: string; url?: string; source: Source }
 
 const MM = spec.mm;
 const FACE = spec.disk.t / 2;
@@ -50,7 +54,7 @@ type Outline = 'solid' | 'brackets' | 'dashed' | 'faint';
 interface Box {
   x: number; y: number; w: number; h: number; labeled: boolean;
   delay: number; fill: Fill; outline: Outline; flash: number; focus: number; ticked: boolean;
-  corners: boolean; cornerFilled: boolean; crossed: boolean; sizeLabel: boolean; labelSide: 'above' | 'below' | 'right'; nextFill: number; sig: number;
+  corners: boolean; cornerFilled: boolean; crossed: boolean; sizeLabel: boolean; labelSide: 'above' | 'below' | 'right'; nextFill: number;
 }
 interface Ring { angle: number; dash: number[]; dashSpeed: number; delay: number; meridian: boolean; opacity: number; tiltX: number; tiltZ: number; width: number; travellers: { square: boolean; offset: number; size: number; speed: number }[] }
 interface Target { instance: Instance; content: TrackerContent; boxes: Box[]; rings: Ring[]; connection?: number[]; weights: Record<Fill, number>; shell: { x: number; y: number; z: number }; time: number }
@@ -91,6 +95,10 @@ export class Tracker {
     if (!instance || !content) return;
     // same disk and same content: keep the choreography; new content (a new slot written) locks on again
     if (instance.slab === this.target?.instance.slab && content.key === this.target.content.key) { this.target.instance = instance; return; }
+    // the reference: pause the previous clip, load this source (if the stream hasn't yet) and play its clip
+    if (this.target && this.target.content.source !== content.source) this.target.content.source.video?.pause();
+    void content.source.load();
+    content.source.video?.play().catch(() => {});
     const reduced = this.opts.reduced?.() ?? false;
     const compact = window.innerWidth < HUD.compactBelowPx; // phones and narrow windows: a smaller, sparser instrument
     const boxScale = compact ? HUD.compactBoxScale : HUD.boxScale;
@@ -119,7 +127,6 @@ export class Tracker {
         sizeLabel: r.w >= 20 && Math.random() < 0.3,
         labelSide: pick(['above', 'above', 'above', 'below', 'right'] as const),
         nextFill: this.time + rand(1, 3),
-        sig: i === 0 ? 0 : Math.floor(Math.random() * content.signals.length),
       })),
       rings: Array.from({ length: Math.floor(rand(ringsMin, ringsMax)) }, () => ({
         angle: rand(-1, 1) * (Math.random() < 0.5 ? 0.7 : Math.PI),
@@ -181,7 +188,7 @@ export class Tracker {
     const c = this.ctx, t = this.target;
     if (!t || this.opacity === 0) {
       if (!this.clear) { c.clearRect(0, 0, window.innerWidth, window.innerHeight); this.clear = true; }
-      if (t && this.opacity === 0) this.target = undefined;
+      if (t && this.opacity === 0) { t.content.source.video?.pause(); this.target = undefined; }
       this.drawReticle();
       return;
     }
@@ -198,7 +205,8 @@ export class Tracker {
     c.globalAlpha = this.opacity;
     this.drawShell(o.camera, t, age);
     if (!main) { c.globalAlpha = 1; this.drawReticle(); return; }
-    const diag = Math.hypot(main.width, main.height), fw = Math.max(diag * 1.15, 1), fh = (fw * SIGNAL.height) / SIGNAL.width;
+    follow(t.content.source);
+    const diag = Math.hypot(main.width, main.height), fw = Math.max(diag * 1.15, 1), fh = (fw * MEDIA.still.height) / MEDIA.still.width;
     const frame = { left: main.left + main.width / 2 - fw / 2, top: main.top + main.height / 2 - fh / 2, width: fw, height: fh };
     this.updateFocus(t, rects, dt);
     this.drawConnections(t, rects, age);
@@ -274,8 +282,8 @@ export class Tracker {
     if (local <= 0) return;
     const reduced = this.opts.reduced?.() ?? false;
     if (!b.ticked) { b.ticked = true; b.flash = this.time + HUD.flash / 1000; this.opts.onTick?.(this.pan(t.instance)); }
-    if (this.time > b.nextFill && b.fill !== 'none') { b.fill = this.rollFill(t.weights); b.sig = Math.floor(Math.random() * t.content.signals.length); b.flash = this.time + HUD.flash / 1000; b.nextFill = this.time + rand(HUD.fillRefresh[0], HUD.fillRefresh[1]) / 1000; }
-    const signal = t.content.signals[b.sig] ?? t.content.signals[0];
+    if (this.time > b.nextFill && b.fill !== 'none') { b.fill = this.rollFill(t.weights); b.flash = this.time + HUD.flash / 1000; b.nextFill = this.time + rand(HUD.fillRefresh[0], HUD.fillRefresh[1]) / 1000; }
+    const source = t.content.source;
     const fill: Fill = b.fill === 'none' && b.focus > 0.5 && b.w < 80 ? 'image' : b.fill;
     const popping = local < HUD.pop / 1000;
     const strobe = !reduced && popping && Math.floor(this.time * HUD.strobeHz * 2) % 2 === 0;
@@ -290,9 +298,9 @@ export class Tracker {
       c.save();
       c.beginPath(); c.rect(box.left, box.top, w, h); c.clip();
       if (this.time < b.flash) { c.fillStyle = 'rgb(255 255 255 / 85%)'; c.fillRect(box.left, box.top, w, h); }
-      else if (fill === 'image') c.drawImage(signal.image, frame.left, frame.top, frame.width, frame.height);
-      else if (fill === 'pixels') { c.imageSmoothingEnabled = false; c.drawImage(signal.pixels, frame.left, frame.top, frame.width, frame.height); c.imageSmoothingEnabled = true; }
-      else if (fill === 'ascii') this.drawAscii(signal, box, frame);
+      else if (fill === 'image') c.drawImage(source.video && isPlaying(source) ? source.video : source.image, frame.left, frame.top, frame.width, frame.height);
+      else if (fill === 'pixels') { c.imageSmoothingEnabled = false; c.drawImage(source.pixels, frame.left, frame.top, frame.width, frame.height); c.imageSmoothingEnabled = true; }
+      else if (fill === 'ascii') this.drawAscii(source, box, frame);
       c.restore();
     }
     this.drawOutline(b, box);
@@ -375,15 +383,15 @@ export class Tracker {
     c.restore();
   }
 
-  private drawAscii(s: Signal, box: Rect, frame: Rect) {
+  private drawAscii(s: Source, box: Rect, frame: Rect) {
     const c = this.ctx, cell = 8;
     const x0 = frame.left + Math.floor((box.left - frame.left) / cell) * cell, y0 = frame.top + Math.floor((box.top - frame.top) / cell) * cell;
     c.fillStyle = 'rgb(0 0 0 / 55%)'; c.fillRect(box.left, box.top, box.width, box.height);
     c.font = FONT_ASCII; c.textAlign = 'center'; c.textBaseline = 'middle';
     for (let y = y0; y < box.top + box.height; y += cell) for (let x = x0; x < box.left + box.width; x += cell) {
-      const u = Math.floor(clamp01((x - frame.left) / frame.width) * 0.999 * SIGNAL.sample.width);
-      const v = Math.floor(clamp01((y - frame.top) / frame.height) * 0.999 * SIGNAL.sample.height);
-      const l0 = s.luminance[v * SIGNAL.sample.width + u] ?? 0, l = s.isBright ? 1 - l0 : l0;
+      const u = Math.floor(clamp01((x - frame.left) / frame.width) * 0.999 * MEDIA.sample.width);
+      const v = Math.floor(clamp01((y - frame.top) / frame.height) * 0.999 * MEDIA.sample.height);
+      const l0 = s.luminance[v * MEDIA.sample.width + u] ?? 0, l = s.isBright ? 1 - l0 : l0;
       const glyph = ASCII_RAMP[Math.min(ASCII_RAMP.length - 1, Math.floor(l * ASCII_RAMP.length))];
       if (l > 0.18) { c.fillStyle = `rgb(255 255 255 / ${Math.round(l * 45)}%)`; c.fillRect(x, y, 7, 7); }
       if (glyph) { c.fillStyle = '#fff'; c.fillText(glyph, x + cell / 2, y + cell / 2); }
@@ -391,28 +399,23 @@ export class Tracker {
     c.textAlign = 'left';
   }
 
+  /** The reference's title: the name typed in capitals 36 px above the box, then `client · year · host ↗` fading in. */
   private drawTitle(t: Target, main: Rect, age: number) {
-    const c = this.ctx, { title, note } = t.content;
+    const c = this.ctx, { name, client, year, host, url } = t.content;
     const [t0, t1] = HUD.titleType, [s0, s1] = HUD.subline;
-    const shown = Math.floor(clamp01((age * 1000 - t0) / (t1 - t0)) * title.length);
-    // the note wraps to a readable measure (narrower on compact screens) and types on after the title
-    const measure = Math.min(window.innerWidth < HUD.compactBelowPx ? window.innerWidth - 32 : 460, window.innerWidth - 32);
+    const shown = Math.floor(clamp01((age * 1000 - t0) / (t1 - t0)) * name.length);
+    const link = `${host}${url ? '  ↗' : ''}`;
+    // compact screens: the subline breaks in two so it never runs off the edge (the reference had one line)
+    const lines = window.innerWidth < HUD.compactBelowPx ? [`${client}  ·  ${year}`, link] : [`${client}  ·  ${year}  ·  ${link}`];
     c.font = FONT_LABEL;
-    const lines: string[] = [];
-    let line = '';
-    for (const w of note.split(' ')) { const next = line ? `${line} ${w}` : w; if (c.measureText(next).width > measure && line) { lines.push(line); line = w; } else line = next; }
-    if (line) lines.push(line);
-    const noteChars = Math.floor(clamp01((age * 1000 - s0) / Math.max(400, note.length * 22)) * note.length);
-    c.font = FONT_TITLE;
-    const width = Math.max(c.measureText(title).width, ...lines.map((l) => { c.font = FONT_LABEL; return c.measureText(l).width; }));
+    const width = Math.max(...lines.map((l) => c.measureText(l).width), (c.font = FONT_TITLE, c.measureText(name.toUpperCase()).width));
     const gutter = 16, lead = 16 * (lines.length - 1);
     const x = Math.round(Math.min(Math.max(main.left, gutter), window.innerWidth - gutter - width));
     const y = Math.round(Math.max(main.top, 60 + lead));
     c.save();
-    this.text(title.slice(0, shown), x, y - 36 - lead, FONT_TITLE, 'bottom');
+    this.text(name.slice(0, shown).toUpperCase(), x, y - 36 - lead, FONT_TITLE, 'bottom');
     c.globalAlpha *= clamp01((age * 1000 - s0) / (s1 - s0));
-    let left = noteChars;
-    lines.forEach((l, i) => { if (left <= 0) return; this.text(l.slice(0, left), x, y - 20 - lead + i * 16, FONT_LABEL, 'bottom'); left -= l.length + 1; });
+    lines.forEach((l, i) => this.text(l, x, y - 20 - lead + i * 16, FONT_LABEL, 'bottom'));
     c.restore();
   }
 

@@ -12,7 +12,7 @@ import { MM, type FloppyKit } from './floppy/kit';
 import type { GlassUniforms } from './floppy/materials';
 import type { Archive } from '../archive/sim';
 import type { Slot } from '../archive/types';
-import { slotSignal } from '../hud/signal';
+import { sourceFor, isPlaying } from '../hud/source';
 
 /** Objects on this layer keep (mild) colour through the post chain. */
 export const COLOUR_LAYER = 1;
@@ -134,9 +134,9 @@ export class Station {
       if (this.redraw > 0) return;
       const slots = this.archive.written(this.disk);
       this.selected = Math.min(this.selected, Math.max(0, slots.length - 1));
-      if (this.view === 'entry' && slots[this.selected]) this.screen.draw({ mode: 'entry', disk, slot: slots[this.selected], signal: slotSignal(slots[this.selected]), clock });
+      if (this.view === 'entry' && slots[this.selected]) this.screen.draw({ mode: 'entry', disk, slot: slots[this.selected], source: this.play(sourceFor(slots[this.selected].item)), clock });
       else this.screen.draw({ mode: 'dir', disk, slots, selected: this.selected, scroll: this.scroll, clock });
-      this.redraw = 0.25;
+      this.redraw = this.view === 'entry' && this.playing && isPlaying(this.playing) ? 1 / 15 : 0.25;
       return;
     }
     // live: the page being saved and the note typing in the writer window
@@ -146,8 +146,21 @@ export class Station {
     if (key !== this.liveKey) { this.liveKey = key; this.liveSince = performance.now(); this.redraw = 0; }
     const typed = slot ? Math.min(1, (performance.now() - this.liveSince) / (slot.note.length * 38 + 400)) : 1;
     if (this.redraw > 0) return;
-    this.screen.draw({ mode: 'live', disk, slot, typed, signal: slot ? slotSignal(slot) : undefined, clock });
-    this.redraw = typed < 1 ? 1 / 15 : 0.5;
+    const source = slot ? this.play(sourceFor(slot.item)) : undefined;
+    this.screen.draw({ mode: 'live', disk, slot, typed, source, clock });
+    this.redraw = typed < 1 || (source && isPlaying(source)) ? 1 / 15 : 0.5;
+  }
+
+  /** The monitor plays the clip of whatever it shows (and pauses the one it showed before). */
+  private playing?: ReturnType<typeof sourceFor>;
+  private play(s: ReturnType<typeof sourceFor>) {
+    if (s !== this.playing) {
+      this.playing?.video?.pause();
+      this.playing = s;
+      void s.load();
+      s.video?.play().catch(() => {});
+    }
+    return s;
   }
 
   /** Canvas pixel under a ray on the tube, if it hits. */

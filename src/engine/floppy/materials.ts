@@ -64,7 +64,7 @@ reflectedLight.directSpecular *= mix(1.0, vSurf.x, 0.6) * uDirect;`);
 /** Label paper; the plane's uv is remapped into this replica's atlas cell (aCell). */
 export function labelMaterial(atlas: { tex: THREE.Texture; cols: number; rows: number }, paper: THREE.Texture) {
   const m = new THREE.MeshStandardMaterial({
-    color: 0xf0f0f0, roughness: 0.72, metalness: 0, map: atlas.tex, alphaTest: 0.5,
+    color: 0xd2d2d2, roughness: 0.72, metalness: 0, map: atlas.tex, alphaTest: 0.5,
     normalMap: paper, normalScale: new THREE.Vector2(0.35, 0.35),
   });
   m.onBeforeCompile = (s) => {
@@ -146,7 +146,8 @@ export function createMaterials(t: FloppyTextures, glass: GlassUniforms, atlas: 
     }),
     liner: new THREE.MeshStandardMaterial({ color: 0x808080, map: t.liner, roughness: 0.95, metalness: 0, side: THREE.DoubleSide }),
     slider: new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.42, metalness: 0 }),
-    label: labelMaterial(atlas, t.paper),
+    // paper is matte: no direct highlight and soft reflections, so a label facing the key light stays readable
+    label: lightScale(labelMaterial(atlas, t.paper), { env: 0.6, direct: 0 }),
   };
 }
 export type FloppyMaterials = ReturnType<typeof createMaterials>;

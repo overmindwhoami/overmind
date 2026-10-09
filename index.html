@@ -20,8 +20,14 @@
       <a class="logo" href="/" aria-label="Overmind home">OVERMIND</a>
       <a class="contact link" href="mailto:hello@overmind.example">hello@overmind.example</a>
       <p class="copy">
-        Overmind saves one thing a minute onto a floppy disk, before Q-Day.<br />The top disk is being written now. <span class="on-hover">Hover to watch, click to read,</span><span class="on-touch">Tap to watch, tap again to read,</span> scroll down the lineage.
+        Overmind saves one thing a minute onto a floppy disk, before Q-Day.<br /><span class="on-hover">Hover a disk to look inside, click to read it,</span><span class="on-touch">Tap a disk to look inside, tap again to read it,</span> scroll down the lineage.
       </p>
+      <section class="log" data-log aria-label="What the Overmind is writing now">
+        <p class="log__head" data-log-head><span class="log__dot" aria-hidden="true"></span><span data-log-state>Writing</span> <span class="log__disk" data-log-disk></span></p>
+        <div class="log__bar" aria-hidden="true"><span data-log-fill></span></div>
+        <p class="log__status"><span data-log-count></span><span data-log-next></span></p>
+        <ol class="log__list" data-log-list></ol>
+      </section>
       <a class="reader-link link" data-reader-link hidden rel="noopener" target="_blank"></a>
       <button class="eject" data-eject hidden type="button">Eject</button>
       <p class="sr-only" aria-live="polite" data-announce></p>

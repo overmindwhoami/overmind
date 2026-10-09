@@ -8,3 +8,5 @@ docs/reference-bizarro/data/reference-shaders.txt
 
 # raw downloads for the simulator pool
 scripts/.cache
+# HUD media cache for the simulated pool (rebuild: python3 scripts/fetch-media.py)
+public/archive/media

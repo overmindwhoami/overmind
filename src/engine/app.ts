@@ -9,17 +9,16 @@ import { Lighting } from './lighting';
 import { Resolution } from './resolution';
 import { FREE, QUALITY, VERIFY, settings } from './settings';
 import { Tracker, type TrackerContent } from '../hud/tracker';
-import { slotSignal } from '../hud/signal';
+import { clientOf, preload, sourceFor } from '../hud/source';
 import { Sound } from '../audio/sound';
-import { Archive, fmtDisk, fmtTime, loadPool } from '../archive/sim';
-import { SLOTS } from '../archive/types';
+import { SimArchive, fmtDisk, fmtTime, type Archive } from '../archive/sim';
 import { BLUR_EVENT, FOCUS_EVENT, READ_EVENT } from '../ui/indexNav';
+import { WriteLog } from '../ui/writeLog';
 
 const INTERFACE = 'a, button, .lil-gui';
 /** Vertical FOV for an aspect ratio: the design FOV, widened on portrait screens so enough shows horizontally. */
 const fovFor = (aspect: number) => Math.max(CAMERA.fov, (2 * Math.atan(Math.tan((CAMERA.minHorizontalFov * Math.PI) / 360) / aspect) * 180) / Math.PI);
 const wrapAngle = (a: number) => ((((a % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-const PULSE = 9; // seconds the instrument stays on the live disk after a slot is written
 const MACHINE_SATURATION = 0.72; // mild colour, only inside the machine
 
 export class App {
@@ -33,6 +32,7 @@ export class App {
   lighting: Lighting;
   tracker: Tracker;
   sound: Sound;
+  log?: WriteLog;
   resolution: Resolution;
 
   // world state
@@ -50,7 +50,6 @@ export class App {
   frame = 0;
   motionScale = 1;
   reduced = false;
-  pulseUntil = 0;
   private lastWritten = -1;
 
   // input state
@@ -86,7 +85,7 @@ export class App {
     announce: document.querySelector<HTMLElement>('[data-announce]'),
   };
 
-  constructor(archive = new Archive()) {
+  constructor(archive: Archive = new SimArchive()) {
     this.archive = archive;
     this.resolution = new Resolution(settings.pixelRatio, RENDERER.pixelRatio.min, RENDERER.pixelRatio.start);
     this.renderer = new THREE.WebGLRenderer({ antialias: RENDERER.antialias, powerPreference: RENDERER.powerPreference, stencil: RENDERER.stencil });
@@ -110,6 +109,8 @@ export class App {
     this.composer = new Composer(this.renderer);
     this.sound = new Sound(document.querySelector<HTMLButtonElement>('[data-sound]'));
     this.tracker = new Tracker({ onLock: this.sound.lock, onTick: this.sound.tick, reduced: () => this.reduced });
+    const logRoot = document.querySelector<HTMLElement>('[data-log]');
+    if (logRoot) this.log = new WriteLog(logRoot, this.archive, () => this.reduced);
 
     // Land on the live disk, at the top of the lineage.
     this.cameraHeight = this.cameraHeightTarget = this.tower.range.max - 0.1;
@@ -126,7 +127,10 @@ export class App {
 
   async load() {
     // canvas text needs the faces loaded explicitly: fonts used only in canvases never start loading by themselves
-    await Promise.all([loadPool(), document.fonts.ready, ...LABEL_FONTS.map((f) => document.fonts.load(f).catch(() => []))]);
+    await Promise.all([this.archive.load(), document.fonts.ready, ...LABEL_FONTS.map((f) => document.fonts.load(f).catch(() => []))]);
+    // a remote archive only knows the lineage now: take it as it is (no seal animation) and land on the live disk
+    this.tower.resync();
+    this.cameraHeight = this.cameraHeightTarget = this.tower.range.max - 0.1;
     for (const t of this.tower.textures) this.renderer.initTexture(t);
     this.update(0);
     performance.mark('compile:start');
@@ -209,19 +213,22 @@ export class App {
     this.tower.lifted = lifted || this.station.reading ? this.station.disk : undefined;
     this.tower.update(dt, a, settings, lifted ? { matrix: lifted.matrix.clone().premultiply(towerInv), open: lifted.open } : undefined);
 
-    // the instrument: on whatever the pointer is over, or on the live disk for a while after each write
+    // the instrument: only on what the pointer is over (or the last tap); the write log says what is being written
     const cur = this.archive.current();
     if (cur.written !== this.lastWritten) {
-      if (this.lastWritten >= 0) this.pulseUntil = this.elapsed + PULSE;
       this.lastWritten = cur.written;
+      // stream ahead: the item about to be written, then the cover of every disk in view
+      if (cur.written < 90) preload(sourceFor(this.archive.slot(cur.disk, cur.written).item));
+      for (const inst of this.tower.instances) preload(this.contentFor(inst).source);
     }
     if (this.station.reading) this.hover = undefined;
     else if (this.focused) this.hover = this.focused;
     else {
       const picked = !this.isTouch && this.isPointerInside && !this.isOverInterface && this.pressDistance < SCROLL.tapSlop ? this.pick() : undefined;
-      const liveInView = Math.abs(this.tower.live.y - a) < band * 0.45;
-      this.hover = picked ?? (this.isTouch ? this.hover : undefined) ?? (this.elapsed < this.pulseUntil && liveInView ? this.liveInstance() : undefined);
+      this.hover = picked ?? (this.isTouch ? this.hover : undefined);
     }
+    document.documentElement.classList.toggle('is-live-view', Math.abs(this.tower.live.y - a) < band * 0.5);
+    this.log?.update(dt);
     document.documentElement.classList.toggle('is-hovering', !!this.hover);
     document.documentElement.classList.toggle('is-reading', this.station.reading);
     if (this.hover) this.tracker.select(this.hover, this.contentFor(this.hover));
@@ -229,19 +236,27 @@ export class App {
     this.sound.update(dt, this.spinVelocity / SPIN.idle, settings.volume);
   }
 
-  private liveInstance(): Instance { return { slab: this.tower.live, offset: 0 }; }
-
-  /** What the instrument says about a disk: the live one shows the slot just written; sealed ones their last note. */
+  /**
+   * What the instrument shows for a disk, in the reference's terms (name · client · year · host, one media source):
+   * the live disk shows the item just written; a sealed disk shows its cover item,
+   * the last thing on it with moving pictures, else with a picture, else its last entry.
+   */
   contentFor(inst: Instance): TrackerContent {
     const n = inst.slab.index, d = this.archive.disk(n);
     const slots = this.archive.written(n);
-    const latest = slots[slots.length - 1];
-    const signals = (slots.length ? pickSpread(slots, 9) : [undefined]).map((s) => slotSignal(s));
-    if (!d.sealed) {
-      const title = latest?.item ? `SLOT ${String(d.written).padStart(2, '0')}/${SLOTS} · ${latest.item.title.toUpperCase().slice(0, 42)}` : `${fmtDisk(n)} · LIVE · ${d.written}/${SLOTS}`;
-      return { key: `live-${n}-${d.written}`, title, note: latest?.note ?? 'a fresh disk. nothing written yet. waiting for the first good thing', signals: latest ? [slotSignal(latest), ...signals] : signals };
-    }
-    return { key: `disk-${n}`, title: `${fmtDisk(n)} · SEALED ${fmtTime(d.sealedAt)}`, note: latest?.note ?? '', signals };
+    const slot = d.sealed
+      ? [...slots].reverse().find((s) => s.item?.clip) ?? [...slots].reverse().find((s) => s.item?.media) ?? slots[slots.length - 1]
+      : slots[slots.length - 1];
+    const item = slot?.item;
+    return {
+      key: d.sealed ? `disk-${n}-${slots.length}` : `live-${n}-${d.written}`, // a remote disk's slots may arrive after the first look
+      name: item?.title ?? (slot ? 'Nothing came through' : `${fmtDisk(n)}`),
+      client: slot ? clientOf(item) : 'Blank disk, waiting for the first slot',
+      year: item?.year ? String(item.year) : slot ? fmtTime(slot.time) : 'now',
+      host: hostOf(item?.url),
+      url: item?.url,
+      source: slot ? sourceFor(item) : sourceFor(undefined, { key: `blank-${n}`, name: fmtDisk(n), client: 'Blank · writing begins' }),
+    };
   }
 
   render(dt = 1 / 60) {
@@ -330,15 +345,20 @@ export class App {
   private lastSelection = '';
   private updateReaderDom() {
     const s = this.station.view === 'entry' ? this.station.selection() : undefined;
-    const key = s ? `${s.disk}-${s.index}` : '';
+    // reading a sealed disk's directory: the link goes to its seal on chain (live archive only)
+    const seal = this.station.reading && this.station.view === 'dir' && this.station.disk !== undefined ? this.archive.disk(this.station.disk).chain?.url : undefined;
+    const key = s ? `${s.disk}-${s.index}` : seal ?? '';
     if (key !== this.lastSelection) {
       this.lastSelection = key;
       const { link } = this.dom;
       if (link) {
-        link.hidden = !s?.item;
+        link.hidden = !s?.item && !seal;
         if (s?.item) {
           link.href = s.item.url;
           link.textContent = s.item.source === 'arxiv' ? 'Open on arXiv ↗' : s.item.source === 'wayback' ? 'Open in the Wayback Machine ↗' : 'Open on the Internet Archive ↗';
+        } else if (seal) {
+          link.href = seal;
+          link.textContent = 'Seal on Solana ↗';
         }
       }
       if (s) this.announce(`${s.item?.title ?? 'Nothing came through'}. ${s.note}`);
@@ -447,8 +467,9 @@ export class App {
   };
 }
 
-/** Up to n items spread evenly through a list (newest last). */
-function pickSpread<T>(list: T[], n: number) {
-  if (list.length <= n) return list;
-  return Array.from({ length: n }, (_, i) => list[Math.round((i / (n - 1)) * (list.length - 1))]);
+/** The reference's host label: the site, without www; Wayback links read `site (archived YYYY)`. */
+function hostOf(url?: string) {
+  if (!url) return 'Offline';
+  const w = url.match(/web\.archive\.org\/web\/(\d{4})\d*\/(https?:\/\/.+)$/);
+  try { return w?.[1] && w[2] ? `${new URL(w[2]).host.replace(/^www\./, '')} (archived ${w[1]})` : new URL(url).host.replace(/^www\./, ''); } catch { return 'Offline'; }
 }

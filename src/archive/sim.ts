@@ -8,7 +8,9 @@
  */
 import spec from '../engine/tower-spec.json';
 import { fascinationOf, noteFor } from './voice';
-import { SLOTS, type Disk, type Item, type Slot } from './types';
+import { SLOTS, type Archive, type Disk, type Item, type Slot } from './types';
+
+export type { Archive } from './types';
 
 const MINUTE = 60_000;
 const params = new URLSearchParams(window.location.search);
@@ -43,7 +45,23 @@ const fileName = (item: Item | undefined, k: number) => {
   return `${base}${item.year ? '_' + item.year : ''}.TXT`.slice(0, 30);
 };
 
-export class Archive {
+/** How disk n looks on the tower (shell, tint, label template, hub angle) and its simulated seed; the same for every archive. */
+export function lookOf(n: number): { seed: number; look: Disk['look'] } {
+  const r = rng(hash32(n * 7919 + 17));
+  const seed = Math.floor(r() * 2 ** 31);
+  let u = r(), shell = 0;
+  while (shell < spec.shells.length - 1 && u >= spec.shells[shell].share) u -= spec.shells[shell++].share;
+  const [t0, t1] = spec.shells[shell].tint;
+  // drift: label templates move slowly down the lineage, with the odd outlier (draw order kept: label, tint, hub)
+  const label = r() < spec.labels.blank ? -1 : (Math.floor(n / 9) + (r() < 0.25 ? Math.floor(r() * 5) : 0)) % spec.labels.templates;
+  const tint = t0 + (t1 - t0) * r();
+  return { seed, look: { shell, tint, label, hub: r() * Math.PI * 2 } };
+}
+/** A 64-hex stand-in fingerprint from a seed (the simulator's disks, and a live disk before it seals). */
+export const pseudoFingerprint = (seed: number, n: number) => Array.from({ length: 8 }, (_, i) => hash32(seed + i * 101 + n).toString(16).padStart(8, '0')).join('');
+
+export class SimArchive implements Archive {
+  async load() { await loadPool(); }
   private loadReal = Date.now();
   private loadSim = Date.now();
   private disks = new Map<number, Disk>();
@@ -67,19 +85,11 @@ export class Archive {
     const cur = this.current();
     const cached = this.disks.get(n);
     if (cached && (cached.sealed || n !== cur.disk)) return cached;
-    const r = rng(hash32(n * 7919 + 17));
-    const seed = Math.floor(r() * 2 ** 31);
-    let u = r(), shell = 0;
-    while (shell < spec.shells.length - 1 && u >= spec.shells[shell].share) u -= spec.shells[shell++].share;
-    const [t0, t1] = spec.shells[shell].tint;
-    // drift: label templates move slowly down the lineage, with the odd outlier
-    const label = r() < spec.labels.blank ? -1 : (Math.floor(n / 9) + (r() < 0.25 ? Math.floor(r() * 5) : 0)) % spec.labels.templates;
+    const { seed, look } = lookOf(n);
     const sealed = n < cur.disk;
-    const fp = Array.from({ length: 8 }, (_, i) => hash32(seed + i * 101 + n).toString(16).padStart(8, '0')).join('');
     const d: Disk = {
       n, seed, startedAt: SIM.epoch + n * SLOTS * MINUTE, sealedAt: SIM.epoch + (n + 1) * SLOTS * MINUTE,
-      sealed, written: sealed ? SLOTS : n === cur.disk ? cur.written : 0, fingerprint: fp, fascination: fascinationOf(seed),
-      look: { shell, tint: t0 + (t1 - t0) * r(), label, hub: r() * Math.PI * 2 },
+      sealed, written: sealed ? SLOTS : n === cur.disk ? cur.written : 0, fingerprint: pseudoFingerprint(seed, n), fascination: fascinationOf(seed), look,
     };
     this.disks.set(n, d);
     return d;

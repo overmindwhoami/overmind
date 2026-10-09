@@ -1,4 +1,4 @@
-// The archivist experience end to end: live top, write pulse, hover a sealed disk, read one in the machine
+// The archivist experience end to end: live top and its write log, a write, hover a sealed disk, read one in the machine
 // (directory, entry, eject), and the lineage further down. Usage: OVERMIND_URL=... node verification/archive-flow.mjs [tag]
 import { mkdirSync } from 'node:fs';
 import { launch } from './lib.mjs';
@@ -18,7 +18,7 @@ const shot = async (name, wait = 0) => { if (wait) await page.waitForTimeout(wai
 const info = () => page.evaluate(() => { const a = window.__overmind; const c = a.archive.current(); return { disk: c.disk, written: c.written, sealed: a.tower.count, h: +a.cameraHeight.toFixed(2), range: a.tower.range, calls: a.renderer.info.render.calls, tris: a.renderer.info.render.triangles, hover: a.hover?.slab.index ?? null, phase: a.station.phase }; });
 await shot('01-live-top', 2500);
 console.log(JSON.stringify(await info()));
-await shot('02-pulse', 3200);
+await shot('02-write', 3200);
 // scroll a little way down the lineage, then hover a sealed disk
 await page.mouse.move(720, 450);
 for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, 200); await page.waitForTimeout(40); }

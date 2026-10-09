@@ -27,6 +27,10 @@ export const shortHash = (h: string) => `0x${h.slice(0, 6)}…${h.slice(-4)}`;
 const HOVER = 0.3; // the live disk floats this far above where it will land (world units)
 const SETTLE = 1.4; // seconds for a sealed disk to drop into place
 const ARRIVE = 1.1; // seconds for a fresh disk to descend into the hover pose
+const WRITE = 0.8; // seconds of the small dip the live disk makes as each slot is written
+const CORE_CLEAR = 0.5; // core lights keep at least this far (vertically) from the live disk
+/** The live disk's resting pose above the stack (world space): forward offset, tilt toward the viewer, turn. */
+export const LIVE_POSE = { z: 0.04, pitch: -0.45, yaw: 0, sheen: 0.4 };
 const _ray = new THREE.Vector3();
 type Entry = { rec: FloppyRecord; matrix: THREE.Matrix4; cell: number };
 
@@ -69,6 +73,7 @@ export class Tower {
   private visibleKey = '';
   private turn = 0;
   private liveProgress = -1;
+  private writeT = 1;
   private tmp = new THREE.Matrix4();
 
   constructor(private archive: Archive, renderer: THREE.WebGLRenderer, lite = false) {
@@ -89,6 +94,16 @@ export class Tower {
     }
   }
 
+  /** Re-reads the lineage from the archive without animating (after a remote archive has loaded, or resynced). */
+  resync() {
+    this.sealed = Math.min(this.archive.sealedCount(), this.slabs.length - 1);
+    this.settling = undefined;
+    this.arriveT = 1;
+    this.liveProgress = -1;
+    this.writeT = 1;
+    this.visibleKey = '';
+  }
+
   /** Lowest and highest camera heights worth visiting: genesis up to the live disk. */
   get range() { return { min: this.slabs[0].y, max: this.landing(this.sealed).y + HOVER + 0.08 }; }
   get count() { return this.sealed; }
@@ -102,6 +117,8 @@ export class Tower {
       index: n, gen: n + 1, parent: n > 0 ? n : null, hash: d.fingerprint, block: d.written, born: new Date(d.sealedAt).toISOString().slice(0, 10),
       label: d.look.label, seed: d.seed, alive: live, progress: live ? d.written : undefined,
       shell: d.look.shell, tint: d.look.tint, open: opts.open ?? (live ? 1 : 0), protect: !live, hub: d.look.hub,
+      // the live disk faces the viewer (and the key light): its metal is dimmed so it never flares over the label
+      sheen: live ? LIVE_POSE.sheen : undefined,
     };
   }
   private cellFor(n: number, rec: FloppyRecord, repaint = false) { return this.kit.atlas.cell(n, rec, repaint); }
@@ -132,7 +149,13 @@ export class Tower {
     this.glassMaterial.roughness = settings.roughness;
     this.glassUniforms.uEdgeGlow.value = settings.edgeGlow;
     this.glassUniforms.uGlassOpacity.value = settings.glassOpacity;
-    this.coreLights.forEach((l, i) => { l.intensity = settings.coreIntensity; l.position.y = height + (i - 1) * LIGHTS.core.verticalSpacing; });
+    // the core lights glow inside the stack; one passing through the hovering live disk would put a hot spot on its face
+    const liveY = this.landing(this.sealed).y + HOVER;
+    this.coreLights.forEach((l, i) => {
+      const y = height + (i - 1) * LIGHTS.core.verticalSpacing;
+      l.intensity = settings.coreIntensity;
+      l.position.y = Math.abs(y - liveY) < CORE_CLEAR ? liveY - CORE_CLEAR : y;
+    });
 
     const sealedNow = Math.min(this.archive.sealedCount(), this.slabs.length - 1);
     if (sealedNow > this.sealed) {
@@ -155,21 +178,26 @@ export class Tower {
       entries.push({ rec, matrix: lerpMatrix(st.from, this.slabs[st.n].matrix, e), cell: this.cellFor(st.n, rec, st.t === dt / SETTLE) });
       if (st.t >= 1) { this.settling = undefined; this.visibleKey = ''; }
     }
-    // the live disk: centred above the stack, tilted toward the viewer so its label and open shutter read,
-    // swaying a little. It is posed in world space (the stack below keeps turning), then taken into the tower's frame.
+    // the live disk: centred above the stack, tilted toward the viewer so its label and open shutter read, almost
+    // still (a slow breath, and a small dip each time a slot is written). It is posed in world space (the stack below
+    // keeps turning), then taken into the tower's frame.
+    const written = this.archive.disk(this.sealed).written;
+    const repaint = written !== this.liveProgress;
+    if (repaint && this.liveProgress >= 0) this.writeT = 0;
+    this.liveProgress = written;
+    this.writeT = Math.min(1, this.writeT + dt / WRITE);
+    const dip = Math.sin(Math.PI * this.writeT) * (1 - this.writeT) * 0.05;
     const land = this.landing(this.sealed);
     const a = Math.max(0, this.arriveT);
     const world = new THREE.Matrix4().compose(
-      new THREE.Vector3(0, land.y + HOVER + (1 - easeOut(a)) * 1.4 + Math.sin(this.turn * 0.9) * 0.012, 0.12),
-      new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.62 + Math.sin(this.turn * 0.41) * 0.06, Math.sin(this.turn * 0.23) * 0.42, 0, 'YXZ')),
+      new THREE.Vector3(0, land.y + HOVER + (1 - easeOut(a)) * 1.4 + Math.sin(this.turn * 0.7) * 0.006 - dip, LIVE_POSE.z),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(LIVE_POSE.pitch + Math.sin(this.turn * 0.31) * 0.02, LIVE_POSE.yaw + Math.sin(this.turn * 0.17) * 0.1, 0, 'YXZ')),
       new THREE.Vector3(1, 1, 1));
     this.live.matrix.copy(world).premultiply(this.tmp.copy(this.group.matrixWorld).invert());
     const pos = new THREE.Vector3().setFromMatrixPosition(this.live.matrix);
     this.live.index = this.sealed; this.live.y = land.y + HOVER; this.live.box.center.copy(pos);
     this.live.matrix.extractBasis(this.live.box.axes[0], this.live.box.axes[1], this.live.box.axes[2]);
     const liveRec = this.record(this.sealed, { live: true });
-    const repaint = this.archive.disk(this.sealed).written !== this.liveProgress;
-    this.liveProgress = this.archive.disk(this.sealed).written;
     if (this.arriveT > 0 && this.lifted !== this.sealed) entries.push({ rec: liveRec, matrix: this.live.matrix, cell: this.cellFor(this.sealed, liveRec, repaint) });
     // a disk lifted out to be read
     if (lifted && this.lifted !== undefined) {

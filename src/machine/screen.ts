@@ -9,14 +9,14 @@
 import * as THREE from 'three';
 import { fmtDate, fmtDisk, fmtTime } from '../archive/sim';
 import { SLOTS, SLOT_BYTES, type Disk, type Slot } from '../archive/types';
-import type { Signal } from '../hud/signal';
+import { isPlaying, type Source } from '../hud/source';
 
 export const SCREEN_PX = { w: 1024, h: 768 } as const;
 export type ScreenState =
-  | { mode: 'live'; disk: Disk; slot?: Slot; typed: number; signal?: Signal; clock: number }
+  | { mode: 'live'; disk: Disk; slot?: Slot; typed: number; source?: Source; clock: number }
   | { mode: 'load'; disk: Disk; t: number; clock: number }
   | { mode: 'dir'; disk: Disk; slots: Slot[]; selected: number; scroll: number; clock: number }
-  | { mode: 'entry'; disk: Disk; slot: Slot; signal?: Signal; clock: number };
+  | { mode: 'entry'; disk: Disk; slot: Slot; source?: Source; clock: number };
 export interface Hit { kind: 'row' | 'link' | 'back' | 'eject'; index?: number }
 
 const W = SCREEN_PX.w, H = SCREEN_PX.h;
@@ -94,20 +94,22 @@ export class ScreenRenderer {
     if (line) out.push(line);
     return out;
   }
-  private picture(sig: Signal | undefined, x: number, y: number, w: number, h: number) {
+  private picture(src: Source | undefined, x: number, y: number, w: number, h: number) {
     const g = this.g;
     g.fillStyle = '#111'; g.fillRect(x, y, w, h);
-    if (sig) {
-      const iw = sig.image.width, ih = sig.image.height, s = Math.max(w / iw, h / ih);
+    if (src) {
+      const media = src.video && isPlaying(src) ? src.video : src.image;
+      const iw = media instanceof HTMLVideoElement ? media.videoWidth : media.width, ih = media instanceof HTMLVideoElement ? media.videoHeight : media.height;
+      const s = Math.max(w / iw, h / ih);
       g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
-      g.drawImage(sig.image, x + (w - iw * s) / 2, y + (h - ih * s) / 2, iw * s, ih * s);
+      g.drawImage(media, x + (w - iw * s) / 2, y + (h - ih * s) / 2, iw * s, ih * s);
       g.restore();
     }
     g.strokeStyle = '#000'; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, w, h);
   }
 
   /** The saved page, as the period browser shows it (live and entry modes). */
-  private page(x: number, y: number, w: number, h: number, slot: Slot | undefined, sig: Signal | undefined, link: boolean) {
+  private page(x: number, y: number, w: number, h: number, slot: Slot | undefined, sig: Source | undefined, link: boolean) {
     const g = this.g, item = slot?.item;
     this.bevel(x, y, w, 40);
     g.font = SANS(14, 700); g.fillStyle = '#000'; g.fillText('Location:', x + 10, y + 26);
@@ -121,7 +123,7 @@ export class ScreenRenderer {
       g.font = SERIF(18); g.fillText('The source did not answer this minute. The slot stays empty.', px + 30, py + 96);
       return;
     }
-    const iw = Math.min(300, pw * 0.36), ih = iw * 0.75;
+    const iw = Math.min(320, pw * 0.38), ih = iw * 0.5625; // the 16:9 still
     this.picture(sig, px + 20, py + 20, iw, ih);
     const tx = px + iw + 44, tw = pw - iw - 66;
     g.fillStyle = '#000080';
@@ -145,7 +147,7 @@ export class ScreenRenderer {
   private live(s: Extract<ScreenState, { mode: 'live' }>) {
     const g = this.g;
     this.window(14, 38, W - 28, H - 50, s.slot?.item ? `Overmind — saving: ${s.slot.item.title.slice(0, 48)}` : 'Overmind — waiting');
-    this.page(16, 64, W - 32, H - 78, s.slot, s.signal, false);
+    this.page(16, 64, W - 32, H - 78, s.slot, s.source, false);
     // writer window over the page
     const OX = W - 470, OY = H - 318, OW = 440, OH = 270;
     this.window(OX, OY, OW, OH, `OVERMIND — A:\\`, true);
@@ -188,7 +190,8 @@ export class ScreenRenderer {
     g.font = MONO(17);
     g.fillText(` Volume in drive A is ${fmtDisk(d.n).replace(' ', '_')}`, x + 18, y + 58);
     g.fillStyle = '#9a9a9a'; g.font = MONO(15);
-    g.fillText(d.sealed ? ` Fingerprint ${d.fingerprint.slice(0, 16)}…${d.fingerprint.slice(-8)}   write-protected` : ` Writing: slot ${d.written + 1} of ${SLOTS} in under a minute`, x + 18, y + 82);
+    const seal = d.chain?.url ? 'on chain' : d.chain?.pending ? 'chain pending' : 'write-protected';
+    g.fillText(d.sealed ? ` Fingerprint ${d.fingerprint.slice(0, 16)}…${d.fingerprint.slice(-8)}   ${seal}` : ` Writing: slot ${d.written + 1} of ${SLOTS} in under a minute`, x + 18, y + 82);
     const top = y + 112, rowH = 30;
     const from = Math.max(0, Math.min(s.scroll, Math.max(0, s.slots.length - ROWS)));
     s.slots.slice(from, from + ROWS).forEach((slot, i) => {
@@ -216,7 +219,7 @@ export class ScreenRenderer {
   private entry(s: Extract<ScreenState, { mode: 'entry' }>) {
     const g = this.g, slot = s.slot;
     this.window(14, 38, W - 28, H - 50, `${fmtDisk(s.disk.n)} · ${String(slot.index + 1).padStart(2, '0')}/${SLOTS} · ${slot.file}`);
-    this.page(16, 64, W - 32, H - 250, slot, s.signal, !!slot.item);
+    this.page(16, 64, W - 32, H - 250, slot, s.source, !!slot.item);
     // the Overmind's note, in its own window
     const OX = 16, OY = H - 184, OW = W - 32, OH = 170;
     this.window(OX, OY, OW, OH, `the overmind's note · saved ${fmtDate(slot.time)} ${fmtTime(slot.time)}`, true);

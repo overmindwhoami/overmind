@@ -21,6 +21,7 @@ export interface FloppyLook {
   open: number; // shutter, 0 closed … 1 fully open
   protect: boolean; // write-protect window open
   hub: number; // hub angle, radians
+  sheen?: number; // scales the metal parts' reflections for this replica (default 1)
 }
 export type FloppyRecord = LabelData & FloppyLook;
 
@@ -34,6 +35,8 @@ export interface KitPart {
 
 const toWorld = <T extends THREE.BufferGeometry>(g: T) => { g.scale(MM, MM, MM); g.computeBoundingSphere(); return g; };
 const grey = (v: number) => new THREE.Color(v, v, v);
+// metals take their reflection colour from the instance colour, so a grey dims the shine without changing the part
+const sheen = (r: FloppyRecord) => (r.sheen === undefined ? undefined : grey(r.sheen));
 export const local = (x: number, y: number, z = 0, rz = 0) =>
   new THREE.Matrix4().compose(new THREE.Vector3(x * MM, y * MM, z * MM), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rz), new THREE.Vector3(1, 1, 1));
 
@@ -55,8 +58,8 @@ export function createKit(glassUniforms: GlassUniforms, { lite = false, renderer
   const glass = (r: FloppyRecord) => SHELLS[r.shell].glass;
   const parts: KitPart[] = [
     { name: 'shell', geometry: shell, material: M.abs, place: (r, add) => { if (!glass(r)) add(I, grey(r.tint)); } },
-    { name: 'shutter', geometry: toWorld(shutterGeometry()), material: M.steel, place: (r, add) => add(local(-r.open * SHUTTER.travel, 0)) },
-    { name: 'hub', geometry: toWorld(hubGeometry()), material: M.hub, place: (r, add) => add(local(HUB.center[0], HUB.center[1], 0, r.hub)) },
+    { name: 'shutter', geometry: toWorld(shutterGeometry()), material: M.steel, place: (r, add) => add(local(-r.open * SHUTTER.travel, 0), sheen(r)) },
+    { name: 'hub', geometry: toWorld(hubGeometry()), material: M.hub, place: (r, add) => add(local(HUB.center[0], HUB.center[1], 0, r.hub), sheen(r)) },
     { name: 'media', geometry: toWorld(mediaGeometry()), material: M.media, place: (_r, add) => add(I) },
     { name: 'liner', geometry: toWorld(linerGeometry()), material: M.liner, place: (r, add) => { if (glass(r)) add(I); } },
     { name: 'slider', geometry: toWorld(sliderGeometry()), material: M.slider, place: (r, add) => add(local(SLIDER.x, r.protect ? SLIDER.yProtected : SLIDER.yEnabled)) },
