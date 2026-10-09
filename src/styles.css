@@ -1,0 +1,77 @@
+@import '../design-system/tokens.css';
+
+*, ::before, ::after { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--color-ground); }
+body { color: var(--color-text-primary); font-family: var(--font-sans); font-size: var(--text-ui); }
+
+.title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.poster { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(18px); transform: scale(1.06); }
+
+.canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; opacity: 0; cursor: none; touch-action: none; transition: opacity var(--dur-reveal); }
+.is-ready .canvas { opacity: 1; }
+.tracker { position: fixed; inset: 0; z-index: 1; width: 100%; height: 100%; pointer-events: none; }
+
+/* Four-corner chrome (24px gutter, 16px at <= 640px) */
+.chrome {
+  position: fixed; inset: 0; z-index: 1; display: grid;
+  grid-template-columns: 1fr auto; grid-template-rows: auto 1fr auto;
+  padding: calc(var(--space-gutter) + env(safe-area-inset-top, 0px)) var(--space-gutter) calc(var(--space-gutter) + env(safe-area-inset-bottom, 0px));
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--dur-reveal) var(--delay-chrome-reveal);
+}
+.is-ready .chrome { opacity: 1; }
+.chrome a, .chrome button { pointer-events: auto; }
+.chrome > a { color: inherit; text-decoration: none; }
+.chrome > a:focus-visible { outline: 1px solid; outline-offset: 6px; }
+
+.logo { grid-area: 1 / 1; place-self: start; height: var(--space-row); line-height: var(--space-row); font-weight: 600; font-size: 13px; letter-spacing: 0.22em; }
+.contact { grid-area: 1 / 2; place-self: start end; letter-spacing: var(--tracking-ui); }
+.copy { grid-area: 3 / 1; align-self: end; max-width: var(--measure-copy); margin: 0; line-height: var(--leading-paragraph); letter-spacing: var(--tracking-ui); text-wrap: balance; }
+
+.link { position: relative; color: inherit; text-decoration: none; }
+.link::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: currentColor;
+  transform: scaleX(0); transform-origin: 100% 50%; transition: transform var(--dur-ui) var(--ease-expo-out);
+}
+.link:hover::after, .link:focus-visible::after { transform: scaleX(1); transform-origin: 0 50%; }
+
+.sound {
+  grid-area: 3 / 2; place-self: end; display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; margin: -6px; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; appearance: none;
+}
+.sound:focus-visible { outline: 1px solid; outline-offset: 2px; }
+.bars { display: flex; align-items: flex-end; gap: 2px; height: 12px; }
+.bars span { width: 2px; height: 100%; background: currentColor; transform: scaleY(0.2); transform-origin: bottom; transition: transform var(--dur-row); }
+[aria-pressed='true'] .bars span { animation: bars var(--dur-loop) ease-in-out infinite alternate; }
+[aria-pressed='true'] .bars span:nth-child(2) { animation-delay: -0.45s; }
+[aria-pressed='true'] .bars span:nth-child(3) { animation-delay: -0.2s; }
+[aria-pressed='true'] .bars span:nth-child(4) { animation-delay: -0.7s; }
+@keyframes bars { from { transform: scaleY(0.2); } to { transform: scaleY(1); } }
+
+/* Keyboard replica index (appears on focus) */
+.index { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.index:focus-within {
+  position: fixed; top: 50%; left: var(--space-gutter); z-index: 2;
+  width: min(420px, 100% - 2 * var(--space-gutter)); height: var(--index-nav-height);
+  overflow: clip; clip-path: none; pointer-events: auto; transform: translateY(-50%);
+  mask-image: linear-gradient(transparent, #000 28% 72%, transparent);
+}
+.index ul { margin: 0; padding: 0; list-style: none; transform: translateY(calc(var(--index-nav-active-offset) - var(--active, 0) * var(--space-row))); transition: transform var(--dur-ui) var(--ease-expo-out); }
+.index li { height: var(--space-row); font-size: 14px; line-height: var(--leading-list); letter-spacing: var(--tracking-ui); opacity: max(0.08, 0.5 - var(--distance, 6) * 0.07); transition: opacity var(--dur-row); }
+.index .is-active { opacity: 1; }
+.index a { position: relative; display: inline-block; color: inherit; text-decoration: none; }
+.index a::after { content: ''; position: absolute; left: 0; right: 0; bottom: 1px; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: 100% 50%; transition: transform var(--dur-ui) var(--ease-expo-out); }
+.index a:focus { outline: none; }
+.index a:focus::after { transform: scaleX(1); transform-origin: 0 50%; }
+.index__details { color: var(--color-text-secondary); }
+
+/* Fallback (styled, unlike the reference) */
+.fallback { display: none; position: fixed; left: var(--space-gutter); bottom: var(--space-gutter); right: var(--space-gutter); margin: 0; max-width: var(--measure-copy); font-size: var(--text-ui); line-height: var(--leading-paragraph); letter-spacing: var(--tracking-ui); }
+.is-unsupported .fallback { display: block; }
+.is-unsupported .chrome { opacity: 1; }
+.is-unsupported .copy { visibility: hidden; }
+
+/* Copy that names the gesture: hover on pointer devices, tap on touch screens. */
+.on-touch { display: none; }
+@media (hover: none) { .on-hover { display: none; } .on-touch { display: inline; } }

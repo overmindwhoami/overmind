@@ -1,0 +1,72 @@
+/*
+ * Overmind tokens: DOM-facing values from the projects.bizar.ro reference (docs/reference-bizarro).
+ * Source of truth: tokens.json. Canvas/WebGL values live in motion.ts and scene.ts.
+ * Single dark look by design: the reference is black-ground only.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Colour */
+  --color-ground: #000000;
+  --color-text-primary: #f2f2f2;
+  --color-text-secondary: rgb(242 242 242 / 45.1%);
+  --color-hud-ink: #ffffff;
+  --color-hud-line: rgb(236 236 236 / 85%);
+  --color-hud-under-stroke: rgb(0 0 0 / 70%);
+  --color-hud-flash: rgb(255 255 255 / 85%);
+  --color-spotlight: rgb(0 0 0 / 78%);
+
+  /* Type */
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --text-ui: 14px;
+  --text-hud-title: 13px;
+  --text-hud-label: 11px;
+  --text-hud-micro: 8px;
+  --leading-paragraph: 20px;
+  --leading-list: 22px;
+  --tracking-ui: -0.2px;
+
+  /* Space */
+  --space-gutter: 24px;
+  --space-row: 22px;
+  --measure-copy: 400px;
+  --index-nav-width: min(420px, 100% - 48px);
+  --index-nav-height: 286px;
+  --index-nav-active-offset: 132px;
+
+  /* Motion */
+  --ease-expo-out: cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-damp: cubic-bezier(0.15, 0.68, 0.32, 1); /* CSS stand-in for k-damping over 4.6/k s */
+  --dur-instant: 10ms;
+  --dur-flash: 90ms;
+  --dur-pop: 140ms;
+  --dur-leave: 250ms;
+  --dur-row: 400ms;
+  --dur-ui: 600ms;
+  --dur-loop: 900ms;
+  --dur-reveal: 1200ms;
+  --delay-chrome-reveal: 600ms;
+  --dur-damp-world: 1535ms;      /* k = 3, 99% settle */
+  --dur-damp-mechanism: 1151ms;  /* k = 4 */
+  --dur-damp-instrument: 329ms;  /* k = 14 */
+}
+
+@media (width <= 640px) {
+  :root {
+    --space-gutter: 16px;
+    --text-ui: 13px;
+    --measure-copy: 325px;
+  }
+}
+
+/* Reference behaviour: fades shorten to 0.3s, list motion to 10ms.
+   Overmind policy (stronger than the reference): every UI affordance transition also drops to 10ms. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-reveal: 300ms;
+    --dur-ui: 10ms;
+    --dur-row: 10ms;
+    --dur-loop: 0ms;
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "overmind",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "layout": "node scripts/build-layout.mjs",
+    "dev": "npm run layout && vite",
+    "build": "npm run layout && tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "polygon-clipping": "0.15.7",
+    "three": "0.186.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "lil-gui": "0.21.0",
+    "pixelmatch": "^5.3.0",
+    "playwright": "^1.60.0",
+    "pngjs": "^7.0.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vite": "8.3.0"
+  }
+}
