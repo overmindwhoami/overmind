@@ -5,3 +5,6 @@ verification/out
 
 # Third-party reference code kept for study only (never publish)
 docs/reference-bizarro/data/reference-shaders.txt
+
+# raw downloads for the simulator pool
+scripts/.cache

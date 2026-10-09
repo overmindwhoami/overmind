@@ -8,7 +8,7 @@ import { launch, open, freeze } from './lib.mjs';
 const BUILD = `
 window.__buildTestScene = () => {
   const a = window.__A, ref = window.__which === 'reference';
-  const parts = a.tower.parts, T = window.__THREE;
+  const parts = ref ? a.tower.parts : [], T = window.__THREE;
   // reference: classes recovered from its own meshes; Overmind (floppy parts) exposes three.js in ?verify mode
   const Mesh = ref ? a.composer.finalPass.constructor : T.Mesh;
   const Box = ref ? parts[6].mesh.geometry.constructor : T.BoxGeometry;
@@ -17,7 +17,7 @@ window.__buildTestScene = () => {
   const Basic = ref ? parts[6].mesh.material.constructor : T.MeshBasicMaterial;
   const glassBase = ref ? parts[0].mesh.material : a.tower.glassMaterial;
   const glass = (tint) => { const m = glassBase.clone(); m.onBeforeCompile = glassBase.onBeforeCompile; m.normalMap = null; m.color.setScalar(tint); return m; };
-  parts.forEach((p) => { p.mesh.visible = false; });
+  if (ref) parts.forEach((p) => { p.mesh.visible = false; }); else { a.tower.group.children.forEach((c) => { if (c.isMesh) c.visible = false; }); a.station.root.visible = false; }
   const add = (geo, mat, pos, rot) => { const m = new Mesh(geo, mat); m.position.set(...pos); m.rotation.set(...rot); m.frustumCulled = false; a.scene.add(m); return m; };
   const slab = () => new Box(0.5, 0.32, 0.088);
   const plastic = new Standard({ color: 0xffffff, roughness: 0.38, metalness: 0 });

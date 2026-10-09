@@ -38,7 +38,7 @@ export async function open(browser, which, { width = 1440, height = 900, dpr = 1
     await page.route('**/' + REFERENCE_BUNDLE, (r) => r.fulfill({ status: 200, contentType: 'application/javascript', body }));
     await page.goto(REFERENCE_URL, { waitUntil: 'load' });
   } else {
-    await page.goto(OVERMIND_URL + '?verify', { waitUntil: 'load' });
+    await page.goto(OVERMIND_URL + '?verify&free', { waitUntil: 'load' });
   }
   await page.waitForFunction(() => document.documentElement.classList.contains('is-ready'), null, { timeout: 60000 });
   await page.evaluate((which) => { window.__A = which === 'reference' ? window.__app : window.__overmind; window.__which = which; }, which);

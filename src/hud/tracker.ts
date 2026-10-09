@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 import { HUD, RATE, damp } from '../../design-system/motion';
 import spec from '../engine/tower-spec.json';
-import { STRAINS, fmtBlock, genLabel, type Instance } from '../engine/tower';
-import { SIGNAL, signalFor, type Signal } from './signal';
+import type { Instance } from '../engine/tower';
+import { SIGNAL, type Signal } from './signal';
+
+/** What the instrument says about its target: a title, a note, and the pictures its boxes look through. */
+export interface TrackerContent { key: string; title: string; note: string; signals: Signal[] }
 
 const MM = spec.mm;
 const FACE = spec.disk.t / 2;
@@ -47,10 +50,10 @@ type Outline = 'solid' | 'brackets' | 'dashed' | 'faint';
 interface Box {
   x: number; y: number; w: number; h: number; labeled: boolean;
   delay: number; fill: Fill; outline: Outline; flash: number; focus: number; ticked: boolean;
-  corners: boolean; cornerFilled: boolean; crossed: boolean; sizeLabel: boolean; labelSide: 'above' | 'below' | 'right'; nextFill: number;
+  corners: boolean; cornerFilled: boolean; crossed: boolean; sizeLabel: boolean; labelSide: 'above' | 'below' | 'right'; nextFill: number; sig: number;
 }
 interface Ring { angle: number; dash: number[]; dashSpeed: number; delay: number; meridian: boolean; opacity: number; tiltX: number; tiltZ: number; width: number; travellers: { square: boolean; offset: number; size: number; speed: number }[] }
-interface Target { instance: Instance; boxes: Box[]; rings: Ring[]; connection?: number[]; weights: Record<Fill, number>; shell: { x: number; y: number; z: number }; signal: Signal; time: number }
+interface Target { instance: Instance; content: TrackerContent; boxes: Box[]; rings: Ring[]; connection?: number[]; weights: Record<Fill, number>; shell: { x: number; y: number; z: number }; time: number }
 
 type Rect = { left: number; top: number; width: number; height: number };
 
@@ -84,9 +87,10 @@ export class Tracker {
 
   get locked() { return this.target?.instance; }
 
-  select(instance: Instance | undefined) {
-    if (!instance) return;
-    if (instance.slab === this.target?.instance.slab) { this.target.instance = instance; return; } // same slab: keep choreography, follow loop copy
+  select(instance: Instance | undefined, content?: TrackerContent) {
+    if (!instance || !content) return;
+    // same disk and same content: keep the choreography; new content (a new slot written) locks on again
+    if (instance.slab === this.target?.instance.slab && content.key === this.target.content.key) { this.target.instance = instance; return; }
     const reduced = this.opts.reduced?.() ?? false;
     const compact = window.innerWidth < HUD.compactBelowPx; // phones and narrow windows: a smaller, sparser instrument
     const boxScale = compact ? HUD.compactBoxScale : HUD.boxScale;
@@ -95,7 +99,7 @@ export class Tracker {
     const cornerShare = rand(0.15, 0.55);
     this.target = {
       instance,
-      signal: signalFor(instance.slab.replica),
+      content,
       weights,
       connection: pick([[1, 3], [1, 3], [4, 4], [], undefined]),
       shell: { x: rand(68, 90), y: rand(70, 92), z: rand(26, 44) },
@@ -115,6 +119,7 @@ export class Tracker {
         sizeLabel: r.w >= 20 && Math.random() < 0.3,
         labelSide: pick(['above', 'above', 'above', 'below', 'right'] as const),
         nextFill: this.time + rand(1, 3),
+        sig: i === 0 ? 0 : Math.floor(Math.random() * content.signals.length),
       })),
       rings: Array.from({ length: Math.floor(rand(ringsMin, ringsMax)) }, () => ({
         angle: rand(-1, 1) * (Math.random() < 0.5 ? 0.7 : Math.PI),
@@ -269,7 +274,8 @@ export class Tracker {
     if (local <= 0) return;
     const reduced = this.opts.reduced?.() ?? false;
     if (!b.ticked) { b.ticked = true; b.flash = this.time + HUD.flash / 1000; this.opts.onTick?.(this.pan(t.instance)); }
-    if (this.time > b.nextFill && b.fill !== 'none') { b.fill = this.rollFill(t.weights); b.flash = this.time + HUD.flash / 1000; b.nextFill = this.time + rand(HUD.fillRefresh[0], HUD.fillRefresh[1]) / 1000; }
+    if (this.time > b.nextFill && b.fill !== 'none') { b.fill = this.rollFill(t.weights); b.sig = Math.floor(Math.random() * t.content.signals.length); b.flash = this.time + HUD.flash / 1000; b.nextFill = this.time + rand(HUD.fillRefresh[0], HUD.fillRefresh[1]) / 1000; }
+    const signal = t.content.signals[b.sig] ?? t.content.signals[0];
     const fill: Fill = b.fill === 'none' && b.focus > 0.5 && b.w < 80 ? 'image' : b.fill;
     const popping = local < HUD.pop / 1000;
     const strobe = !reduced && popping && Math.floor(this.time * HUD.strobeHz * 2) % 2 === 0;
@@ -284,9 +290,9 @@ export class Tracker {
       c.save();
       c.beginPath(); c.rect(box.left, box.top, w, h); c.clip();
       if (this.time < b.flash) { c.fillStyle = 'rgb(255 255 255 / 85%)'; c.fillRect(box.left, box.top, w, h); }
-      else if (fill === 'image') c.drawImage(t.signal.image, frame.left, frame.top, frame.width, frame.height);
-      else if (fill === 'pixels') { c.imageSmoothingEnabled = false; c.drawImage(t.signal.pixels, frame.left, frame.top, frame.width, frame.height); c.imageSmoothingEnabled = true; }
-      else if (fill === 'ascii') this.drawAscii(t.signal, box, frame);
+      else if (fill === 'image') c.drawImage(signal.image, frame.left, frame.top, frame.width, frame.height);
+      else if (fill === 'pixels') { c.imageSmoothingEnabled = false; c.drawImage(signal.pixels, frame.left, frame.top, frame.width, frame.height); c.imageSmoothingEnabled = true; }
+      else if (fill === 'ascii') this.drawAscii(signal, box, frame);
       c.restore();
     }
     this.drawOutline(b, box);
@@ -386,24 +392,27 @@ export class Tracker {
   }
 
   private drawTitle(t: Target, main: Rect, age: number) {
-    const c = this.ctx, rep = t.instance.slab.replica;
-    const title = `${genLabel(rep.gen)}  REPLICA`;
+    const c = this.ctx, { title, note } = t.content;
     const [t0, t1] = HUD.titleType, [s0, s1] = HUD.subline;
     const shown = Math.floor(clamp01((age * 1000 - t0) / (t1 - t0)) * title.length);
-    const lineage = rep.parent ? `from ${genLabel(rep.parent)}` : 'genesis';
-    // compact screens: two short lines instead of one long one, so the subline never runs off the edge
-    const lines = window.innerWidth < HUD.compactBelowPx
-      ? [`${STRAINS[rep.strain]}  ·  born ${rep.born}`, `block ${fmtBlock(rep.block)}  ·  ${lineage}`]
-      : [`${STRAINS[rep.strain]}  ·  born ${rep.born}  ·  block ${fmtBlock(rep.block)}  ·  ${lineage}`];
+    // the note wraps to a readable measure (narrower on compact screens) and types on after the title
+    const measure = Math.min(window.innerWidth < HUD.compactBelowPx ? window.innerWidth - 32 : 460, window.innerWidth - 32);
     c.font = FONT_LABEL;
-    const width = Math.max(c.measureText(title).width, ...lines.map((l) => c.measureText(l).width));
+    const lines: string[] = [];
+    let line = '';
+    for (const w of note.split(' ')) { const next = line ? `${line} ${w}` : w; if (c.measureText(next).width > measure && line) { lines.push(line); line = w; } else line = next; }
+    if (line) lines.push(line);
+    const noteChars = Math.floor(clamp01((age * 1000 - s0) / Math.max(400, note.length * 22)) * note.length);
+    c.font = FONT_TITLE;
+    const width = Math.max(c.measureText(title).width, ...lines.map((l) => { c.font = FONT_LABEL; return c.measureText(l).width; }));
     const gutter = 16, lead = 16 * (lines.length - 1);
     const x = Math.round(Math.min(Math.max(main.left, gutter), window.innerWidth - gutter - width));
     const y = Math.round(Math.max(main.top, 60 + lead));
     c.save();
     this.text(title.slice(0, shown), x, y - 36 - lead, FONT_TITLE, 'bottom');
     c.globalAlpha *= clamp01((age * 1000 - s0) / (s1 - s0));
-    lines.forEach((l, i) => this.text(l, x, y - 20 - lead + i * 16, FONT_LABEL, 'bottom'));
+    let left = noteChars;
+    lines.forEach((l, i) => { if (left <= 0) return; this.text(l.slice(0, left), x, y - 20 - lead + i * 16, FONT_LABEL, 'bottom'); left -= l.length + 1; });
     c.restore();
   }
 

@@ -11,6 +11,7 @@
   ],
   "labels": { "templates": 5, "blank": 0.14 },
   "count": 60,
+  "maxDisks": 1440,
   "hiddenBase": 12,
   "layoutSeed": 77101,
   "dataSeed": 20261008

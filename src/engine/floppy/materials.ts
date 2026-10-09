@@ -80,14 +80,30 @@ attribute float aCell; uniform float uCols; uniform float uRows;`)
   return m;
 }
 
-/** Brushed and turned metals: the env cards carry the look; the key light's direct highlight is damped so it streaks instead of flaring. */
-function softMetal(m: THREE.MeshPhysicalMaterial, direct = 0.45) {
-  m.onBeforeCompile = (s) => {
-    s.fragmentShader = s.fragmentShader.replace('#include <aomap_fragment>', `#include <aomap_fragment>
-reflectedLight.directSpecular *= ${direct.toFixed(2)};`);
+/**
+ * Scales a material's reflected light: env = environment reflections, direct = key/rim highlights.
+ * Needed because three.js ignores `envMapIntensity` when the scene supplies the environment (it uses
+ * scene.environmentIntensity instead). Values live in uniforms, so materials never share baked constants,
+ * and it composes with any existing onBeforeCompile patch.
+ */
+export function lightScale<T extends THREE.MeshStandardMaterial>(m: T, { env = 1, direct = 1 } = {}): T {
+  const prev = m.onBeforeCompile.bind(m);
+  const prevKey = m.customProgramCacheKey();
+  const u = { uEnvScale: { value: env }, uDirectScale: { value: direct } };
+  m.onBeforeCompile = (s, r) => {
+    prev(s, r);
+    Object.assign(s.uniforms, u);
+    s.fragmentShader = s.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uEnvScale;\nuniform float uDirectScale;')
+      .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nreflectedLight.indirectSpecular *= uEnvScale;\nreflectedLight.directSpecular *= uDirectScale;');
   };
+  m.customProgramCacheKey = () => `${prevKey}|lightScale`;
+  m.userData.lightScale = u;
   return m;
 }
+
+/** Brushed and turned metals: the env cards carry the look; the key light's direct highlight is damped so it streaks instead of flaring. */
+export const softMetal = (m: THREE.MeshPhysicalMaterial, direct = 0.45) => lightScale(m, { direct });
 
 export function createTextures(lite = false) {
   const k = lite ? 0.5 : 1; // lite: half resolution (the tile sizes in millimetres stay the same)
@@ -118,11 +134,11 @@ export function createMaterials(t: FloppyTextures, glass: GlassUniforms, atlas: 
     glass: Object.assign(glassMaterial(glass), { normalMap: t.decal, normalScale: new THREE.Vector2(0.6, 0.6) }),
     steel: softMetal(new THREE.MeshPhysicalMaterial({
       color: 0xc4c5c8, metalness: 1, roughness: 0.36, roughnessMap: t.brushed.roughness, normalMap: t.brushed.normal,
-      normalScale: new THREE.Vector2(0.25, 0.25), anisotropy: 0.75, anisotropyRotation: 0, envMapIntensity: 0.38,
+      normalScale: new THREE.Vector2(0.25, 0.25), anisotropy: 0.75, anisotropyRotation: 0,
     })),
     hub: softMetal(new THREE.MeshPhysicalMaterial({
       color: 0xb0b0b0, metalness: 1, roughness: 0.42, normalMap: t.hubRings, normalScale: new THREE.Vector2(0.12, 0.12),
-      anisotropy: 0.6, anisotropyMap: t.hubAniso, envMapIntensity: 0.4,
+      anisotropy: 0.6, anisotropyMap: t.hubAniso,
     }), 0.6),
     media: new THREE.MeshPhysicalMaterial({
       color: new THREE.Color().setRGB(30 / 255, 24 / 255, 20 / 255, THREE.SRGBColorSpace), metalness: 0, roughness: 0.26,

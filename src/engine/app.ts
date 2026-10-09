@@ -1,26 +1,34 @@
 import * as THREE from 'three';
 import { DECAY, DRIFT, MAX_DT, PARALLAX, RATE, REDUCED, SCROLL, SPIN, damp } from '../../design-system/motion';
 import { CAMERA, RENDERER } from '../../design-system/scene';
-import { Tower, period, replicas, type Instance } from './tower';
+import { Tower, type Instance } from './tower';
+import { Station, COLOUR_LAYER } from './station';
 import { LABEL_FONTS } from './floppy/labels';
 import { Composer } from './composer';
 import { Lighting } from './lighting';
 import { Resolution } from './resolution';
-import { QUALITY, VERIFY, settings } from './settings';
-import { Tracker } from '../hud/tracker';
+import { FREE, QUALITY, VERIFY, settings } from './settings';
+import { Tracker, type TrackerContent } from '../hud/tracker';
+import { slotSignal } from '../hud/signal';
 import { Sound } from '../audio/sound';
-import { BLUR_EVENT, FOCUS_EVENT } from '../ui/indexNav';
+import { Archive, fmtDisk, fmtTime, loadPool } from '../archive/sim';
+import { SLOTS } from '../archive/types';
+import { BLUR_EVENT, FOCUS_EVENT, READ_EVENT } from '../ui/indexNav';
 
 const INTERFACE = 'a, button, .lil-gui';
 /** Vertical FOV for an aspect ratio: the design FOV, widened on portrait screens so enough shows horizontally. */
 const fovFor = (aspect: number) => Math.max(CAMERA.fov, (2 * Math.atan(Math.tan((CAMERA.minHorizontalFov * Math.PI) / 360) / aspect) * 180) / Math.PI);
 const wrapAngle = (a: number) => ((((a % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+const PULSE = 9; // seconds the instrument stays on the live disk after a slot is written
+const MACHINE_SATURATION = 0.72; // mild colour, only inside the machine
 
 export class App {
   renderer: THREE.WebGLRenderer;
   camera: THREE.PerspectiveCamera;
   scene = new THREE.Scene();
+  archive: Archive;
   tower: Tower;
+  station: Station;
   composer: Composer;
   lighting: Lighting;
   tracker: Tracker;
@@ -42,6 +50,8 @@ export class App {
   frame = 0;
   motionScale = 1;
   reduced = false;
+  pulseUntil = 0;
+  private lastWritten = -1;
 
   // input state
   pointer = new THREE.Vector2();
@@ -63,13 +73,21 @@ export class App {
   private previousTower = new THREE.Matrix4();
   private towerInverse = new THREE.Matrix4();
   private reproject = new THREE.Matrix4();
-  private shift = new THREE.Matrix4();
+  private reprojectStatic = new THREE.Matrix4();
   private raycaster = new THREE.Raycaster();
   private rayOrigin = new THREE.Vector3();
   private rayDirection = new THREE.Vector3();
   private previousTime = 0;
+  private maskMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  private readerFocus = 0;
+  private dom = {
+    link: document.querySelector<HTMLAnchorElement>('[data-reader-link]'),
+    eject: document.querySelector<HTMLButtonElement>('[data-eject]'),
+    announce: document.querySelector<HTMLElement>('[data-announce]'),
+  };
 
-  constructor() {
+  constructor(archive = new Archive()) {
+    this.archive = archive;
     this.resolution = new Resolution(settings.pixelRatio, RENDERER.pixelRatio.min, RENDERER.pixelRatio.start);
     this.renderer = new THREE.WebGLRenderer({ antialias: RENDERER.antialias, powerPreference: RENDERER.powerPreference, stencil: RENDERER.stencil });
     this.renderer.setPixelRatio(this.pixelRatio());
@@ -81,19 +99,20 @@ export class App {
     canvas.setAttribute('aria-hidden', 'true');
     document.body.appendChild(canvas);
 
-    this.camera = new THREE.PerspectiveCamera(fovFor(window.innerWidth / window.innerHeight), window.innerWidth / window.innerHeight, CAMERA.near, CAMERA.far);
+    this.camera = new THREE.PerspectiveCamera(fovFor(window.innerWidth / window.innerHeight), window.innerWidth / window.innerHeight, CAMERA.near, CAMERA.far + 20);
     this.lighting = new Lighting(this.renderer, this.scene);
     performance.mark('tower:start');
-    this.tower = new Tower(QUALITY === 'low');
+    this.tower = new Tower(this.archive, this.renderer, QUALITY === 'low');
     performance.mark('tower:end');
     this.scene.add(this.tower.group);
+    this.station = new Station(this.tower.kit, this.tower.glassUniforms, this.archive);
+    this.scene.add(this.station.root);
     this.composer = new Composer(this.renderer);
     this.sound = new Sound(document.querySelector<HTMLButtonElement>('[data-sound]'));
     this.tracker = new Tracker({ onLock: this.sound.lock, onTick: this.sound.tick, reduced: () => this.reduced });
 
-    // Start on the newest replica.
-    const newest = this.tower.slabs.find((s) => s.replica.index === replicas.length - 1);
-    this.cameraHeight = this.cameraHeightTarget = newest ? newest.y : 0;
+    // Land on the live disk, at the top of the lineage.
+    this.cameraHeight = this.cameraHeightTarget = this.tower.range.max - 0.1;
 
     const query = window.matchMedia('(prefers-reduced-motion: reduce)');
     const apply = (on: boolean) => { this.reduced = on; this.motionScale = on ? REDUCED.continuousScale : 1; };
@@ -107,15 +126,12 @@ export class App {
 
   async load() {
     // canvas text needs the faces loaded explicitly: fonts used only in canvases never start loading by themselves
-    await Promise.all([document.fonts.ready, ...LABEL_FONTS.map((f) => document.fonts.load(f).catch(() => []))]);
-    performance.mark('labels:start');
-    this.tower.paintLabels();
-    performance.mark('labels:end');
+    await Promise.all([loadPool(), document.fonts.ready, ...LABEL_FONTS.map((f) => document.fonts.load(f).catch(() => []))]);
+    for (const t of this.tower.textures) this.renderer.initTexture(t);
     this.update(0);
     performance.mark('compile:start');
     await this.renderer.compileAsync(this.scene, this.camera);
     performance.mark('upload:start');
-    for (const t of this.tower.textures) this.renderer.initTexture(t);
     performance.mark('render:start');
     this.render();
     performance.mark('render:end');
@@ -153,18 +169,16 @@ export class App {
     }
     this.tower.group.rotation.y = this.spin;
 
-    const H = this.tower.height;
-    if (Math.abs(this.cameraHeight) > H / 2) {
-      const e = Math.round(this.cameraHeight / H) * H;
-      this.cameraHeight -= e;
-      this.cameraHeightTarget -= e;
-      if (this.focused) this.focused.offset -= e;
-      this.previousViewProjection.multiply(this.shift.makeTranslation(0, e, 0));
+    // the lineage is finite: from genesis up to the live disk, with a soft stop at both ends
+    const { min, max } = this.tower.range;
+    if (!FREE) {
+      const clamped = Math.min(max, Math.max(min - 0.3, this.cameraHeightTarget));
+      this.cameraHeightTarget += (clamped - this.cameraHeightTarget) * damp(RATE.mechanism, dt);
     }
     this.cameraHeight += (this.cameraHeightTarget - this.cameraHeight) * damp(this.reduced ? REDUCED.cameraRate : RATE.world, dt);
     this.pointer.lerp(this.pointerTarget, damp(RATE.world, dt));
 
-    const par = settings.parallax * m;
+    const par = settings.parallax * m * (1 - this.station.blend);
     const a = this.cameraHeight + Math.sin(t * DRIFT.heightFreq) * DRIFT.heightAmp * m;
     this.camera.position.set(
       Math.sin(t * DRIFT.xFreq) * DRIFT.xAmp * m + this.pointer.x * PARALLAX.cameraX * par,
@@ -173,6 +187,16 @@ export class App {
     );
     this.lookAt.set(CAMERA.lookX, a + CAMERA.lookOffset, 0);
     this.camera.up.set(Math.sin(CAMERA.roll), Math.cos(CAMERA.roll), 0);
+    // reading: the camera goes to the machine's screen
+    this.station.place(this.cameraHeight, this.camera.aspect);
+    const b = this.station.blend * this.station.blend * (3 - 2 * this.station.blend);
+    if (b > 0) {
+      const r = this.station.readerCamera(this.camera);
+      this.camera.position.lerp(r.pos, b);
+      this.lookAt.lerp(r.look, b);
+      this.camera.up.lerp(new THREE.Vector3(0, 1, 0), b).normalize();
+      this.readerFocus = r.distance;
+    }
     this.camera.lookAt(this.lookAt);
     this.scene.updateMatrixWorld();
     this.camera.updateMatrixWorld();
@@ -180,13 +204,44 @@ export class App {
     const band = Math.tan((this.camera.fov * Math.PI) / 360) * 3.3 + 0.7;
     this.tower.cull(a - band, a + band);
     this.lighting.update(this.pointer, this.scene, settings);
-    this.tower.update(a, settings);
+    const towerInv = this.towerInverse.copy(this.tower.group.matrixWorld).invert();
+    const lifted = this.station.update(dt, (n) => this.tower.worldMatrix({ slab: this.tower.slab(n), offset: 0 }, new THREE.Matrix4()));
+    this.tower.lifted = lifted || this.station.reading ? this.station.disk : undefined;
+    this.tower.update(dt, a, settings, lifted ? { matrix: lifted.matrix.clone().premultiply(towerInv), open: lifted.open } : undefined);
 
-    if (this.focused) this.hover = this.focused;
-    else if (!this.isTouch) this.hover = this.isPointerInside && !this.isOverInterface && this.pressDistance < SCROLL.tapSlop ? this.pick() : undefined;
+    // the instrument: on whatever the pointer is over, or on the live disk for a while after each write
+    const cur = this.archive.current();
+    if (cur.written !== this.lastWritten) {
+      if (this.lastWritten >= 0) this.pulseUntil = this.elapsed + PULSE;
+      this.lastWritten = cur.written;
+    }
+    if (this.station.reading) this.hover = undefined;
+    else if (this.focused) this.hover = this.focused;
+    else {
+      const picked = !this.isTouch && this.isPointerInside && !this.isOverInterface && this.pressDistance < SCROLL.tapSlop ? this.pick() : undefined;
+      const liveInView = Math.abs(this.tower.live.y - a) < band * 0.45;
+      this.hover = picked ?? (this.isTouch ? this.hover : undefined) ?? (this.elapsed < this.pulseUntil && liveInView ? this.liveInstance() : undefined);
+    }
     document.documentElement.classList.toggle('is-hovering', !!this.hover);
-    this.tracker.select(this.hover);
+    document.documentElement.classList.toggle('is-reading', this.station.reading);
+    if (this.hover) this.tracker.select(this.hover, this.contentFor(this.hover));
+    this.updateReaderDom();
     this.sound.update(dt, this.spinVelocity / SPIN.idle, settings.volume);
+  }
+
+  private liveInstance(): Instance { return { slab: this.tower.live, offset: 0 }; }
+
+  /** What the instrument says about a disk: the live one shows the slot just written; sealed ones their last note. */
+  contentFor(inst: Instance): TrackerContent {
+    const n = inst.slab.index, d = this.archive.disk(n);
+    const slots = this.archive.written(n);
+    const latest = slots[slots.length - 1];
+    const signals = (slots.length ? pickSpread(slots, 9) : [undefined]).map((s) => slotSignal(s));
+    if (!d.sealed) {
+      const title = latest?.item ? `SLOT ${String(d.written).padStart(2, '0')}/${SLOTS} · ${latest.item.title.toUpperCase().slice(0, 42)}` : `${fmtDisk(n)} · LIVE · ${d.written}/${SLOTS}`;
+      return { key: `live-${n}-${d.written}`, title, note: latest?.note ?? 'a fresh disk. nothing written yet. waiting for the first good thing', signals: latest ? [slotSignal(latest), ...signals] : signals };
+    }
+    return { key: `disk-${n}`, title: `${fmtDisk(n)} · SEALED ${fmtTime(d.sealedAt)}`, note: latest?.note ?? '', signals };
   }
 
   render(dt = 1 / 60) {
@@ -197,19 +252,23 @@ export class App {
     this.towerInverse.copy(tw).invert();
     if (this.frame === 0) { this.previousTower.copy(tw); this.previousViewProjection.copy(this.viewProjection); }
     this.reproject.copy(this.previousViewProjection).multiply(this.previousTower).multiply(this.towerInverse).multiply(this.viewProjectionInverse);
+    this.reprojectStatic.copy(this.previousViewProjection).multiply(this.viewProjectionInverse);
     this.renderer.setRenderTarget(this.composer.scene);
     this.renderer.render(this.scene, this.camera);
+    this.renderMask();
     const breathe = this.reduced ? 0 : Math.sin(this.elapsed * DRIFT.focusFreq) * DRIFT.focusAmp;
+    const b = this.station.blend;
     this.composer.render({
       dt,
-      focus: DRIFT.focusBase + settings.focus + breathe,
+      focus: (DRIFT.focusBase + settings.focus + breathe) * (1 - b) + this.readerFocus * b,
       frame: this.frame,
       time: this.elapsed,
       projectionInverse: this.camera.projectionMatrixInverse,
       reproject: this.reproject,
-      settings: { ...settings, shutter: this.reduced && !REDUCED.motionBlur ? 0 : settings.shutter },
+      reprojectStatic: this.reprojectStatic,
+      settings: { ...settings, shutter: this.reduced && !REDUCED.motionBlur ? 0 : settings.shutter, machineSaturation: MACHINE_SATURATION },
     });
-    const cursor = this.isDragging && this.pressDistance >= SCROLL.tapSlop ? 'drag' : this.hover ? 'hover' : 'idle';
+    const cursor = this.isDragging && this.pressDistance >= SCROLL.tapSlop ? 'drag' : this.hover || this.readerHover ? 'hover' : 'idle';
     this.tracker.update({
       camera: this.camera, cursor, dt, focused: !!this.focused, hovering: !!this.hover,
       matrixOf: (i, out) => this.tower.worldMatrix(i, out),
@@ -222,6 +281,21 @@ export class App {
     this.frame++;
   }
 
+  /** Half-resolution coverage of the machine: the composer keeps mild colour there and nowhere else. */
+  private renderMask() {
+    const r = this.renderer, bg = this.scene.background;
+    r.setRenderTarget(this.composer.mask);
+    this.scene.background = null;
+    r.setClearColor(0x000000, 1);
+    r.clear();
+    this.scene.overrideMaterial = this.maskMaterial;
+    this.camera.layers.set(COLOUR_LAYER);
+    r.render(this.scene, this.camera);
+    this.camera.layers.set(0);
+    this.scene.overrideMaterial = null;
+    this.scene.background = bg;
+  }
+
   pick() {
     this.raycaster.setFromCamera(this.pointerTarget, this.camera);
     this.towerInverse.copy(this.tower.group.matrixWorld).invert();
@@ -230,21 +304,53 @@ export class App {
     return this.tower.pick(this.rayOrigin, this.rayDirection);
   }
 
-  /** Fly to a replica and turn it to face the camera (reference keyboard focus; also used for click-to-inspect). */
-  focus(replicaIndex: number) {
-    const slab = this.tower.slabs.find((s) => s.replica.index === replicaIndex);
+  /** Fly to a disk and turn it to face the camera (keyboard index focus). */
+  focus(n: number) {
+    const slab = this.tower.slab(n);
     if (!slab) return;
-    const offset = Math.round((this.cameraHeight - slab.y) / period) * period;
     const { x, z } = slab.box.center;
-    this.focused = { slab, offset };
+    this.focused = { slab, offset: 0 };
     this.focusSpin = this.spin + wrapAngle(-Math.atan2(x, z) - this.spin);
-    this.cameraHeightTarget = slab.y + offset;
+    this.cameraHeightTarget = slab.y;
   }
   blur() { this.focused = undefined; }
+
+  /** Lift a disk out of the stack and read it in the machine. */
+  read(n: number) {
+    if (this.station.reading || n > this.tower.count) return;
+    const slab = this.tower.slab(n);
+    this.focused = undefined;
+    this.station.insert(n, this.tower.worldMatrix({ slab, offset: 0 }, new THREE.Matrix4()));
+    this.tower.lifted = n;
+    this.sound.select(Math.max(-1, Math.min(1, (slab.box.center.x / 0.8) * 0.5)));
+    this.announce(`${fmtDisk(n)} is in the drive.`);
+  }
+
+  private readerHover = false;
+  private lastSelection = '';
+  private updateReaderDom() {
+    const s = this.station.view === 'entry' ? this.station.selection() : undefined;
+    const key = s ? `${s.disk}-${s.index}` : '';
+    if (key !== this.lastSelection) {
+      this.lastSelection = key;
+      const { link } = this.dom;
+      if (link) {
+        link.hidden = !s?.item;
+        if (s?.item) {
+          link.href = s.item.url;
+          link.textContent = s.item.source === 'arxiv' ? 'Open on arXiv ↗' : s.item.source === 'wayback' ? 'Open in the Wayback Machine ↗' : 'Open on the Internet Archive ↗';
+        }
+      }
+      if (s) this.announce(`${s.item?.title ?? 'Nothing came through'}. ${s.note}`);
+    }
+    if (this.dom.eject) this.dom.eject.hidden = !this.station.open;
+  }
+  private announce(text: string) { if (this.dom.announce) this.dom.announce.textContent = text; }
 
   private listen() {
     document.documentElement.addEventListener('pointerleave', this.onPointerLeave);
     window.addEventListener(FOCUS_EVENT, ((e: CustomEvent<number>) => this.focus(e.detail)) as EventListener);
+    window.addEventListener(READ_EVENT, ((e: CustomEvent<number>) => this.read(e.detail)) as EventListener);
     window.addEventListener(BLUR_EVENT, () => this.blur());
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('pointerdown', this.onPointerDown);
@@ -253,12 +359,18 @@ export class App {
     window.addEventListener('pointercancel', this.onPointerUp);
     window.addEventListener('resize', this.resize);
     window.addEventListener('wheel', this.onWheel, { passive: true });
+    this.dom.eject?.addEventListener('click', () => this.station.eject());
   }
 
-  onWheel = (e: { deltaY: number }) => { this.cameraHeightTarget -= e.deltaY * SCROLL.wheelUnitsPerPx; };
+  onWheel = (e: { deltaY: number }) => {
+    if (this.station.reading) { this.station.wheel(e.deltaY); return; }
+    this.cameraHeightTarget -= e.deltaY * SCROLL.wheelUnitsPerPx;
+  };
 
-  onKeyDown = (e: { key: string }) => {
+  onKeyDown = (e: { key: string; preventDefault?: () => void }) => {
     if (e.key === 'm' || e.key === 'M') { this.sound.toggle(!this.sound.enabled); return; }
+    if (this.station.reading) { if (this.station.key(e.key)) e.preventDefault?.(); return; }
+    if (e.key === 'Enter' && this.focused) { this.read(this.focused.slab.index); return; }
     if (e.key === 'Escape' && this.focused && !(document.activeElement instanceof HTMLAnchorElement)) { this.blur(); return; }
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') this.spinBoost += e.key === 'ArrowLeft' ? -SPIN.keyBoost : SPIN.keyBoost;
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') this.cameraHeightTarget += e.key === 'ArrowUp' ? SCROLL.keyStep : -SCROLL.keyStep;
@@ -281,7 +393,11 @@ export class App {
     this.isTouch = e.pointerType !== 'mouse';
     this.isOverInterface = e.target instanceof Element && !!e.target.closest(INTERFACE);
     this.pointerTarget.set((e.clientX / window.innerWidth) * 2 - 1, -((e.clientY / window.innerHeight) * 2 - 1));
-    if (!this.isDragging) return;
+    if (this.station.open && !this.isTouch) {
+      this.raycaster.setFromCamera(this.pointerTarget, this.camera);
+      this.readerHover = !!this.station.hitAt(this.raycaster);
+    } else this.readerHover = false;
+    if (!this.isDragging || this.station.reading) return;
     const dx = e.clientX - this.pressStart.x, dy = e.clientY - this.pressStart.y;
     this.pressDistance += Math.hypot(dx, dy);
     const turn = (dx / window.innerWidth) * SCROLL.dragTurnPerViewport;
@@ -298,19 +414,24 @@ export class App {
     if (e.type === 'pointerup' && this.pressDistance < SCROLL.tapSlop) this.onTap();
     this.pressDistance = 0;
     this.isDragging = false;
-    this.spinBoost = this.dragVelocity - settings.spin * this.motionScale;
+    if (!this.station.reading) this.spinBoost = this.dragVelocity - settings.spin * this.motionScale;
     this.lastMoveTime = undefined;
     document.documentElement.classList.remove('is-dragging');
   };
 
   private onTap() {
+    if (this.station.reading) {
+      if (!this.station.open) return;
+      this.raycaster.setFromCamera(this.pointerTarget, this.camera);
+      const hit = this.station.hitAt(this.raycaster);
+      if (hit) this.station.act(hit);
+      else if (!this.station.touches(this.raycaster)) this.station.eject();
+      return;
+    }
     const target = this.isTouch ? this.pick() : this.hover;
     if (this.isTouch && target?.slab !== this.hover?.slab) { this.hover = target; return; }
-    if (target && (this.isTouch || target.slab === this.pressed?.slab)) {
-      if (this.focused?.slab === target.slab) { this.blur(); return; }
-      this.focus(target.slab.replica.index);
-      this.sound.select(Math.max(-1, Math.min(1, (target.slab.box.center.x / 0.8) * 0.5)));
-    } else if (this.focused) this.blur();
+    if (target && (this.isTouch || target.slab === this.pressed?.slab)) this.read(target.slab.index);
+    else if (this.focused) this.blur();
   }
 
   onPointerLeave = () => { this.isPointerInside = false; this.pointerTarget.set(0, 0); };
@@ -324,4 +445,10 @@ export class App {
     this.composer.resize();
     this.tracker.resize();
   };
+}
+
+/** Up to n items spread evenly through a list (newest last). */
+function pickSpread<T>(list: T[], n: number) {
+  if (list.length <= n) return list;
+  return Array.from({ length: n }, (_, i) => list[Math.round((i / (n - 1)) * (list.length - 1))]);
 }

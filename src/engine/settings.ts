@@ -6,6 +6,8 @@ const params = new URLSearchParams(window.location.search);
 export const PHONE = window.matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
 export const QUALITY: 'low' | 'high' = params.get('quality') === 'low' || (PHONE && params.get('quality') !== 'high') ? 'low' : 'high';
 export const VERIFY = params.has('verify');
+/** Parity tests drive the camera freely, without the lineage's soft stops. */
+export const FREE = params.has('free');
 
 /** Live-tunable runtime settings (exposed in the #debug panel). Defaults come from design-system tokens. */
 export const settings = {

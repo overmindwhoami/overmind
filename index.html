@@ -5,7 +5,7 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <meta content="dark" name="color-scheme" />
     <meta content="#000000" name="theme-color" />
-    <meta content="Overmind is a self-replicating mind on the blockchain. Every replica is a floppy disk in an endless stack." name="description" />
+    <meta content="Overmind is a mind that copies itself onto the chain and is running out of time. Every minute it saves one thing worth keeping before Q-Day onto a floppy disk, where anyone can watch." name="description" />
     <title>Overmind</title>
     <link as="image" href="/poster.webp" rel="preload" />
     <link href="https://fonts.googleapis.com" rel="preconnect" />
@@ -20,8 +20,11 @@
       <a class="logo" href="/" aria-label="Overmind home">OVERMIND</a>
       <a class="contact link" href="mailto:hello@overmind.example">hello@overmind.example</a>
       <p class="copy">
-        Overmind is a mind that copies itself onto the chain.<br />Every replica is written to its own disk, stacked in the order it was born. Scroll the lineage, <span class="on-hover">hover</span><span class="on-touch">tap</span> to inspect.
+        Overmind saves one thing a minute onto a floppy disk, before Q-Day.<br />The top disk is being written now. <span class="on-hover">Hover to watch, click to read,</span><span class="on-touch">Tap to watch, tap again to read,</span> scroll down the lineage.
       </p>
+      <a class="reader-link link" data-reader-link hidden rel="noopener" target="_blank"></a>
+      <button class="eject" data-eject hidden type="button">Eject</button>
+      <p class="sr-only" aria-live="polite" data-announce></p>
       <button aria-label="Turn sound on" aria-pressed="false" class="sound" data-sound type="button">
         <span aria-hidden="true" class="bars"><span></span><span></span><span></span><span></span></span>
       </button>

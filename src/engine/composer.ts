@@ -9,7 +9,7 @@ float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.y
 const VERT = `in vec2 position; out vec2 vUv; void main() { vUv = position * 0.5 + 0.5; gl_Position = vec4(position, 0.0, 1.0); }`;
 const FRAG = {
   motion: `uniform sampler2D tColor; uniform sampler2D tDepth;
-uniform mat4 uProjectionInverse; uniform mat4 uReproject; uniform vec2 uResolution;
+uniform mat4 uProjectionInverse; uniform mat4 uReproject; uniform mat4 uReprojectStatic; uniform sampler2D tMask; uniform vec2 uResolution;
 uniform float uAperture; uniform float uFocus; uniform float uFrame; uniform float uLensMaximum; uniform float uShutter; uniform float uCap;
 void main() {
   float depth = texture(tDepth, vUv).r;
@@ -17,7 +17,8 @@ void main() {
   vec4 view = uProjectionInverse * clip;
   float dist = -view.z / view.w;
   vec2 velocity = vec2(0.0);
-  if (depth < 1.0) { vec4 prev = uReproject * clip; velocity = (clip.xy - prev.xy / prev.w) * 0.5 * uShutter; }
+  // the tower spins; the machine stands still: masked pixels reproject with the camera only
+  if (depth < 1.0) { vec4 prev = (texture(tMask, vUv).r > 0.5 ? uReprojectStatic : uReproject) * clip; velocity = (clip.xy - prev.xy / prev.w) * 0.5 * uShutter; }
   float travel = length(velocity * uResolution), cap = uResolution.y * uCap;
   if (travel > cap) velocity *= cap / travel;
   float jitter = hash12(gl_FragCoord.xy + fract(uFrame * 0.618) * 97.0) - 0.5;
@@ -72,6 +73,7 @@ void main() {
   final: `uniform sampler2D tFrame; uniform sampler2D tBloom; uniform vec2 uResolution; uniform vec3 uTint;
 uniform float uAberration; uniform float uBloom; uniform float uContrast; uniform float uExposure;
 uniform float uGrain; uniform float uSaturation; uniform float uTime; uniform float uVignette;
+uniform sampler2D tMask; uniform float uMaskSaturation;
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 void main() {
@@ -81,7 +83,8 @@ void main() {
   c += mix(b, uTint * luma(b), 0.35) * uBloom;
   c *= 1.0 - smoothstep(0.25, 0.85, r) * uVignette;
   c = srgb(aces(c * uExposure));
-  c = mix(vec3(luma(c)), c, uSaturation);
+  // colour only where the mask says (the machine): everything else keeps the site's monochrome
+  c = mix(vec3(luma(c)), c, mix(uSaturation, uMaskSaturation, texture(tMask, vUv).r));
   c = (c - 0.5) * uContrast + 0.5;
   c += (hash12(floor(vUv * uResolution) + fract(uTime) * vec2(1931.0, 2713.0)) - 0.5) * uGrain;
   fragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
@@ -91,11 +94,15 @@ void main() {
 export interface PostSettings {
   aperture: number; lensMaximum: number; shutter: number; blurCap: number; threshold: number; bloomRadius: number;
   bloom: number; aberration: number; contrast: number; exposure: number; grain: number; saturation: number; vignette: number;
+  /** Saturation inside the colour mask. */
+  machineSaturation?: number;
 }
 
 type Uniforms = Record<string, THREE.IUniform>;
 export class Composer {
   readonly scene: THREE.WebGLRenderTarget;
+  /** Half-resolution coverage of objects allowed to keep colour (red channel), drawn by the app each frame. */
+  readonly mask: THREE.WebGLRenderTarget;
   private motion: THREE.WebGLRenderTarget;
   private lens: THREE.WebGLRenderTarget;
   private down: THREE.WebGLRenderTarget[] = [];
@@ -111,6 +118,7 @@ export class Composer {
     const target = (w: number, h: number) => new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: false });
     this.scene = new THREE.WebGLRenderTarget(x, y, { type: THREE.HalfFloatType, samples: 2, depthTexture: new THREE.DepthTexture(x, y) });
     this.motion = target(x, y);
+    this.mask = new THREE.WebGLRenderTarget(Math.max(1, x >> 1), Math.max(1, y >> 1), { depthBuffer: true });
     this.lens = target(x, y);
     for (let i = 0; i < 6; i++) {
       const s = this.levelSize(i);
@@ -124,13 +132,14 @@ export class Composer {
     const v2 = () => f(new THREE.Vector2());
     const m4 = () => f(new THREE.Matrix4());
     this.u = {
-      motion: { tColor: f(this.scene.texture), tDepth: f(this.scene.depthTexture), uProjectionInverse: m4(), uReproject: m4(), uResolution: v2(), uAperture: f(), uFocus: f(1), uFrame: f(), uLensMaximum: f(), uShutter: f(), uCap: f(0.035) },
+      motion: { tColor: f(this.scene.texture), tDepth: f(this.scene.depthTexture), uProjectionInverse: m4(), uReproject: m4(), uReprojectStatic: m4(), tMask: f(null), uResolution: v2(), uAperture: f(), uFocus: f(1), uFrame: f(), uLensMaximum: f(), uShutter: f(), uCap: f(0.035) },
       lens: { tMap: f(this.motion.texture), uTexel: v2(), uFrame: f(), uMaximum: f() },
       prefilter: { tMap: f(this.lens.texture), uTexel: v2(), uThreshold: f(1) },
       down: { tMap: f(null), uTexel: v2() },
       up: { tCurrent: f(null), tSmaller: f(null), uTexel: v2(), uRadius: f(1) },
-      final: { tFrame: f(this.lens.texture), tBloom: f(this.up[0].texture), uResolution: v2(), uTint: f(new THREE.Color('#ffffff')), uAberration: f(), uBloom: f(), uContrast: f(1), uExposure: f(1), uGrain: f(), uSaturation: f(1), uTime: f(), uVignette: f() },
+      final: { tFrame: f(this.lens.texture), tBloom: f(this.up[0].texture), uResolution: v2(), uTint: f(new THREE.Color('#ffffff')), uAberration: f(), uBloom: f(), uContrast: f(1), uExposure: f(1), uGrain: f(), uSaturation: f(1), uTime: f(), uVignette: f(), tMask: f(this.mask.texture), uMaskSaturation: f(0) },
     };
+    this.u.motion.tMask.value = this.mask.texture;
     const make = (k: keyof typeof FRAG) => {
       const mesh = new THREE.Mesh(tri, new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: VERT, fragmentShader: COMMON + FRAG[k], uniforms: this.u[k], depthTest: false, depthWrite: false }));
       mesh.frustumCulled = false;
@@ -149,7 +158,7 @@ export class Composer {
     this.renderer.render(this.pass[k], this.camera);
   }
 
-  render(o: { dt: number; focus: number; frame: number; time: number; projectionInverse: THREE.Matrix4; reproject: THREE.Matrix4; settings: PostSettings }) {
+  render(o: { dt: number; focus: number; frame: number; time: number; projectionInverse: THREE.Matrix4; reproject: THREE.Matrix4; reprojectStatic?: THREE.Matrix4; settings: PostSettings }) {
     const { x, y } = this.size, s = o.settings, u = this.u;
     u.motion.uAperture.value = s.aperture;
     u.motion.uFocus.value = o.focus;
@@ -157,6 +166,7 @@ export class Composer {
     u.motion.uLensMaximum.value = s.lensMaximum;
     (u.motion.uProjectionInverse.value as THREE.Matrix4).copy(o.projectionInverse);
     (u.motion.uReproject.value as THREE.Matrix4).copy(o.reproject);
+    (u.motion.uReprojectStatic.value as THREE.Matrix4).copy(o.reprojectStatic ?? o.reproject);
     (u.motion.uResolution.value as THREE.Vector2).set(x, y);
     u.motion.uShutter.value = s.shutter / Math.max(o.dt * 60, 0.25);
     u.motion.uCap.value = s.blurCap;
@@ -185,6 +195,7 @@ export class Composer {
     const fu = u.final;
     fu.uAberration.value = s.aberration; fu.uBloom.value = s.bloom; fu.uContrast.value = s.contrast; fu.uExposure.value = s.exposure;
     fu.uGrain.value = s.grain; fu.uSaturation.value = s.saturation; fu.uTime.value = o.time; fu.uVignette.value = s.vignette;
+    fu.uMaskSaturation.value = s.machineSaturation ?? s.saturation;
     (fu.uResolution.value as THREE.Vector2).set(x, y);
     this.draw('final', null);
   }
@@ -194,6 +205,7 @@ export class Composer {
     const { x, y } = this.size;
     this.scene.setSize(x, y);
     this.motion.setSize(x, y);
+    this.mask.setSize(Math.max(1, x >> 1), Math.max(1, y >> 1));
     this.lens.setSize(x, y);
     this.down.forEach((t, i) => { const s = this.levelSize(i); t.setSize(s.w, s.h); });
     this.up.forEach((t, i) => { const s = this.levelSize(i); t.setSize(s.w, s.h); });

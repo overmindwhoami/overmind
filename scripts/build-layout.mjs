@@ -1,6 +1,6 @@
-// Precomputes the replica tower at build time (the reference simulates this at load, costing ~300 ms of main thread).
-// Every replica is a 3.5" floppy disk. Output: src/data/layout.json with per-disk matrices, oriented boxes,
-// the loop period and the sample replica records (including how each disk looks: shell, shutter, write-protect, label).
+// Precomputes the lineage tower at build time (the reference simulates its stack at load, costing ~300 ms).
+// Disk 0 (genesis) is dropped first; every later disk lands on top, so the archive can grow without the stack ever
+// moving. Output: src/data/layout.json with one pose (position + quaternion) per disk, up to MAX disks.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +8,8 @@ import { Matrix4, Quaternion, Vector3 } from 'three';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const spec = JSON.parse(readFileSync(resolve(root, 'src/engine/tower-spec.json'), 'utf8'));
-const { mm: MM, disk: DISK, count: COUNT, hiddenBase: BASE } = spec;
+const { mm: MM, disk: DISK, hiddenBase: BASE } = spec;
+const COUNT = spec.maxDisks;
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -51,8 +52,9 @@ function overlaps(a, b, lift = 0) {
   }
   return true;
 }
+// only the top of the stack can be touched by a falling disk
 const blocked = (box, placed) =>
-  box.center.y - verticalHalf(box) < 0 || placed.some((p) => Math.abs(p.center.y - box.center.y) < 1.2 && overlaps(box, p));
+  box.center.y - verticalHalf(box) < 0 || placed.slice(-48).some((p) => Math.abs(p.center.y - box.center.y) < 1.2 && overlaps(box, p));
 function drop(box, placed, fromY) {
   let y = fromY;
   for (;;) {
@@ -100,64 +102,14 @@ for (let d = 0; d < BASE + COUNT; d++) {
   top = Math.max(top, best.box.center.y + verticalHalf(best.box));
   if (d >= BASE) visible.push(best);
 }
-const reach = Math.max(...visible.map((v) => verticalHalf(v.box)));
-const ys = visible.map((v) => v.box.center.y);
-let period = Math.max(...ys) - Math.min(...ys) + reach * 2;
-const collides = (lift) => visible.some((a) => visible.some((b) => Math.abs(b.box.center.y + lift - a.box.center.y) < reach * 2 && overlaps(a.box, b.box, lift)));
-while (!collides(period - 0.01)) period -= 0.01;
-const shift = -(Math.min(...ys) + Math.max(...ys)) / 2;
-visible.forEach((v) => { v.box.center.y += shift; v.matrix.elements[13] += shift; });
-
-// ---- Sample replica records (placeholders until real chain data exists) ----
-const dr = rng(spec.dataSeed);
-const hex = (n) => Array.from({ length: n }, () => Math.floor(dr(0, 16)).toString(16)).join('');
-const pickShell = () => {
-  let u = dr(), i = 0;
-  while (i < spec.shells.length - 1 && u >= spec.shells[i].share) u -= spec.shells[i++].share;
-  return i;
-};
-let block = 18_430_212;
-const born = Date.UTC(2025, 0, 6);
-const replicas = visible.map((v, i) => {
-  const strain = pickShell();
-  const [t0, t1] = spec.shells[strain].tint;
-  const inherited = dr(0.05, 0.95);
-  const alive = i >= COUNT - 6 ? true : dr() < 0.28;
-  block += Math.floor(dr(9000, 26000));
-  return {
-    index: i,
-    gen: i + 1,
-    parent: i === 0 ? null : Math.max(1, i - Math.floor(dr(0, Math.min(i, 4)))),
-    hash: hex(64),
-    block,
-    born: new Date(born + i * 7 * 86400000).toISOString().slice(0, 10),
-    strain,
-    tint: +dr(t0, t1).toFixed(4),
-    inherited: +inherited.toFixed(4),
-    alive,
-    // how the disk looks: running replicas have their shutter (part) open, archived ones are write-protected
-    open: alive ? +dr(0.35, 1).toFixed(3) : dr() < 0.08 ? +dr(0.1, 0.4).toFixed(3) : 0,
-    protect: !alive && dr() < 0.65,
-    label: dr() < spec.labels.blank ? -1 : Math.floor(dr(0, spec.labels.templates)),
-    hub: +dr(0, Math.PI * 2).toFixed(4),
-    seed: Math.floor(dr(0, 2 ** 31)),
-  };
+const round = (n) => +n.toFixed(5);
+const disks = visible.map((v) => {
+  const p = new Vector3(), qq = new Quaternion(), sc = new Vector3();
+  v.matrix.decompose(p, qq, sc);
+  return [...p.toArray(), ...qq.toArray()].map(round);
 });
-
-const round = (n) => +n.toFixed(6);
-const layout = {
-  generated: 'scripts/build-layout.mjs',
-  period: round(period),
-  half: HALF.map(round),
-  slabs: visible.map((v, i) => ({
-    index: i,
-    y: round(v.box.center.y),
-    matrix: v.matrix.elements.map(round),
-    axes: v.box.axes.map((a) => a.toArray().map(round)),
-    center: v.box.center.toArray().map(round),
-  })),
-  replicas,
-};
+const ys = disks.map((d) => d[1]);
+const layout = { generated: 'scripts/build-layout.mjs', half: HALF.map(round), disks };
 mkdirSync(resolve(root, 'src/data'), { recursive: true });
 writeFileSync(resolve(root, 'src/data/layout.json'), JSON.stringify(layout));
-console.log(`layout: ${visible.length} disks, period ${period.toFixed(4)} u, y ${Math.min(...layout.slabs.map((s) => s.y)).toFixed(3)}…${Math.max(...layout.slabs.map((s) => s.y)).toFixed(3)}`);
+console.log(`layout: ${disks.length} disk poses, y ${Math.min(...ys).toFixed(3)}…${Math.max(...ys).toFixed(3)}, ${(JSON.stringify(layout).length / 1024).toFixed(0)} KB`);

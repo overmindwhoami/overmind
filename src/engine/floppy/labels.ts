@@ -7,7 +7,9 @@ import * as THREE from 'three';
 import { FEATURES, LABEL, LABEL_LENGTH, Z1 } from './spec';
 import { rng } from './textures';
 
-export interface LabelData { index: number; gen: number; parent: number | null; hash: string; block: number; born: string; label: number; seed: number; alive: boolean }
+export interface LabelData { index: number; gen: number; parent: number | null; hash: string; block: number; born: string; label: number; seed: number; alive: boolean;
+  /** Slots written so far on a live disk (draws 90 ticks along the bottom of the front panel). */
+  progress?: number }
 
 const W = LABEL.w;
 const FRONT = LABEL.front - (LABEL.edge + LABEL.bend); // straight front panel length
@@ -158,36 +160,93 @@ const TEMPLATES: ((c: Ctx, d: LabelData, r: (a?: number, b?: number) => number) 
 /** Faces the printed templates use (handwriting uses system fonts). Load these before painting. */
 export const LABEL_FONTS = ['500 12px Inter', '600 12px Inter', '700 12px Inter', '400 12px "JetBrains Mono"', '600 12px "JetBrains Mono"'];
 
+/** 90 ruled ticks along the bottom of the front panel: filled for written slots, hollow for the rest. */
+function drawProgress(c: Ctx, written: number) {
+  const x0 = 4, x1 = W - 4, y = FRONT - 9.5, step = (x1 - x0) / 90;
+  c.save();
+  c.fillStyle = 'rgba(244,242,236,0.92)'; c.fillRect(x0 - 1.5, y - 1.6, x1 - x0 + 3, 6.4);
+  for (let k = 0; k < 90; k++) {
+    const x = x0 + k * step;
+    c.fillStyle = k < written ? '#151515' : 'rgba(21,21,21,0.18)';
+    c.fillRect(x + 0.1, y, step * 0.62, k % 10 === 9 ? 3.6 : 2.6);
+  }
+  c.fillStyle = '#151515';
+  sans(c, `${written}/90`, x1, y - 2.4, 1.6, 600, 'right', 0.2);
+  c.restore();
+}
+
+function paint(c: Ctx, d: LabelData) {
+  TEMPLATES[d.label % TEMPLATES.length](c, d, rng(d.seed ^ 0x51ab));
+  if (d.progress !== undefined) drawProgress(c, d.progress);
+}
+
 /**
- * Atlas of cols × rows cells of W × LABEL_LENGTH mm, transparent outside each die-cut label.
- * `paint()` draws the labels; call it once the web fonts have loaded (canvas text silently falls back otherwise).
+ * Label atlas painted on demand: cols × rows cells of W × LABEL_LENGTH mm, transparent outside each die-cut label.
+ * `cell(key, data)` returns a cell for a disk, painting it the first time (or when `repaint` is set) and evicting the
+ * least recently used label. With a renderer, each label is copied into its cell on the GPU (no full re-upload).
  */
-export function buildLabelAtlas(labels: LabelData[], width: number) {
-  const cols = 10; // 4096 px → 409 px per 70 mm label (≈ 1:1 at the closest tower view), 41 MB like the slab atlas
-  const cw = Math.floor(width / cols);
-  const ch = Math.floor((cw * LABEL_LENGTH) / W);
-  const rows = Math.ceil(Math.max(1, Math.max(...labels.map((l) => l.index)) + 1) / cols);
-  const canvas = document.createElement('canvas');
-  canvas.width = cw * cols; canvas.height = ch * rows;
-  const c = canvas.getContext('2d');
-  if (!c) throw new Error('2D canvas is required for the label atlas.');
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  const paint = () => {
-    c.clearRect(0, 0, canvas.width, canvas.height);
-    c.textBaseline = 'alphabetic';
-    for (const d of labels) {
-      if (d.label < 0) continue;
-      const x0 = (d.index % cols) * cw, y0 = Math.floor(d.index / cols) * ch;
-      c.save();
-      c.beginPath(); c.rect(x0, y0, cw, ch); c.clip();
-      c.setTransform(cw / W, 0, 0, ch / LABEL_LENGTH, x0, y0);
-      TEMPLATES[d.label % TEMPLATES.length](c, d, rng(d.seed ^ 0x51ab));
-      c.restore();
+export class LabelAtlas {
+  readonly cols = 10;
+  readonly rows = 6;
+  readonly tex: THREE.CanvasTexture;
+  readonly canvas = document.createElement('canvas');
+  private cellCanvas = document.createElement('canvas');
+  private cellTex: THREE.Texture;
+  private cw: number;
+  private ch: number;
+  private owner: (number | undefined)[] = [];
+  private lookup = new Map<number, number>();
+  private used: number[] = [];
+  private clock = 0;
+
+  constructor(width: number, private renderer?: THREE.WebGLRenderer) {
+    this.cw = Math.floor(width / this.cols);
+    this.ch = Math.floor((this.cw * LABEL_LENGTH) / W);
+    this.canvas.width = this.cw * this.cols; this.canvas.height = this.ch * this.rows;
+    this.cellCanvas.width = this.cw; this.cellCanvas.height = this.ch;
+    this.tex = new THREE.CanvasTexture(this.canvas);
+    this.tex.colorSpace = THREE.SRGBColorSpace;
+    this.tex.anisotropy = 8;
+    this.tex.minFilter = THREE.LinearMipmapLinearFilter;
+    this.cellTex = new THREE.Texture(this.cellCanvas);
+    this.owner = Array.from({ length: this.cols * this.rows }, () => undefined);
+    this.used = this.owner.map(() => -1);
+  }
+
+  get capacity() { return this.cols * this.rows; }
+
+  /** Cell index for disk `key`; paints `data` into it when new or when `repaint` is set. */
+  cell(key: number, data: LabelData, repaint = false) {
+    this.clock++;
+    let cell = this.lookup.get(key);
+    if (cell === undefined) {
+      cell = this.used.indexOf(Math.min(...this.used));
+      const old = this.owner[cell];
+      if (old !== undefined) this.lookup.delete(old);
+      this.owner[cell] = key;
+      this.lookup.set(key, cell);
+      repaint = true;
     }
-    tex.needsUpdate = true;
-  };
-  return { tex, cols, rows, canvas, paint };
+    this.used[cell] = this.clock;
+    if (repaint) this.paintCell(cell, data);
+    return cell;
+  }
+
+  private paintCell(cell: number, data: LabelData) {
+    const c = this.cellCanvas.getContext('2d')!;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, this.cw, this.ch);
+    c.textBaseline = 'alphabetic';
+    if (data.label >= 0) { c.save(); c.setTransform(this.cw / W, 0, 0, this.ch / LABEL_LENGTH, 0, 0); paint(c, data); c.restore(); }
+    const col = cell % this.cols, row = Math.floor(cell / this.cols);
+    if (this.renderer) {
+      this.cellTex.needsUpdate = true;
+      this.renderer.copyTextureToTexture(this.cellTex, this.tex, null, new THREE.Vector2(col * this.cw, this.canvas.height - (row + 1) * this.ch));
+    } else {
+      const g = this.canvas.getContext('2d')!;
+      g.clearRect(col * this.cw, row * this.ch, this.cw, this.ch);
+      g.drawImage(this.cellCanvas, col * this.cw, row * this.ch);
+      this.tex.needsUpdate = true;
+    }
+  }
 }
