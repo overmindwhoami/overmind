@@ -13,6 +13,7 @@ import { currentDisk, disks, migrate, pool, slots, type DiskRow, type SlotRow } 
 import { anchorPending, events, round, SLOTS } from './archivist.js';
 import { explorer, signer, walletInfo } from './chain.js';
 import { recordText } from './seal.js';
+import { refreshWatch, watch, watchEvents } from './watch.js';
 import { get as getMedia, storage } from './media.js';
 import { MODEL } from './mind.js';
 
@@ -28,6 +29,7 @@ const diskJson = (d: DiskRow) => ({
 const slotJson = (s: SlotRow) => ({
   disk: s.disk, index: s.k, time: +new Date(s.time), item: s.item ?? undefined, note: s.note, file: s.file, model: s.model,
   dice: { source: s.dice.source, round: s.dice.round, quantum: s.dice.quantum },
+  qday: s.qday_shift ?? undefined,
 });
 
 function send(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) {
@@ -47,7 +49,7 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/api/state') {
       const d = await currentDisk();
-      return send(res, 200, { now: Date.now(), slots: SLOTS, disk: d ? diskJson(d) : null, msToNext: Math.max(0, nextAt - Date.now()) });
+      return send(res, 200, { now: Date.now(), slots: SLOTS, disk: d ? diskJson(d) : null, msToNext: Math.max(0, nextAt - Date.now()), watch });
     }
     if (path === '/api/disks') {
       const from = Math.max(0, Number(url.searchParams.get('from') ?? 0) | 0);
@@ -83,8 +85,10 @@ const server = createServer(async (req, res) => {
         media: emit('media'),
       };
       for (const [k, h] of Object.entries(handlers)) events.on(k, h);
+      const onWatch = emit('watch');
+      watchEvents.on('watch', onWatch);
       const beat = setInterval(() => res.write(': beat\n\n'), 25_000);
-      req.on('close', () => { clearInterval(beat); for (const [k, h] of Object.entries(handlers)) events.off(k, h); });
+      req.on('close', () => { clearInterval(beat); watchEvents.off('watch', onWatch); for (const [k, h] of Object.entries(handlers)) events.off(k, h); });
       return;
     }
     const media = path.match(/^\/media\/([\w.-]+)$/);
@@ -115,6 +119,8 @@ await migrate();
 const w = await signer();
 console.log(`sealing on ${process.env.SOLANA_CLUSTER ?? 'devnet'} from ${w.publicKey.toBase58()}`);
 setInterval(() => { anchorPending().catch((e) => console.warn('anchor retry failed', e)); }, 5 * 60_000);
+await refreshWatch();
+setInterval(() => { refreshWatch().catch((e) => console.warn('watch failed', e)); }, 5 * 60_000);
 void anchorPending().catch(() => {});
 server.listen(PORT, () => {
   console.log(`overmind on :${PORT} · model ${process.env.ANTHROPIC_API_KEY ? MODEL : 'template (no ANTHROPIC_API_KEY)'} · media on ${storage}`);

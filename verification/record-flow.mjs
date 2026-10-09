@@ -3,6 +3,8 @@
 // Usage: OVERMIND_URL=http://127.0.0.1:4173/ node verification/record-flow.mjs [out.mp4]
 // Both scenes open at the top of the lineage (the write log, one write, a hover on the live disk, a seal); SCENE=opening
 // stops there, the full flow goes on to a sealed disk, reading it in the machine and the lineage.
+// SCENE=hour1 QUERY='&api=<url>' records a live (or rehearsal) Overmind an hour after launch: disk 0001 two-thirds
+// full, the Q-Day watch, a look inside, reading the disk in the machine, and a real save landing on the minute.
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { launch } from './lib.mjs';
@@ -24,10 +26,12 @@ const context = await browser.newContext({ viewport: { width: W, height: H }, de
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-await page.goto(`${BASE}?verify&speed=${SPEED}&epoch=${encodeURIComponent(epoch)}`, { waitUntil: 'load' });
+await page.goto(`${BASE}?verify&speed=${SPEED}&epoch=${encodeURIComponent(epoch)}${process.env.QUERY ?? ''}`, { waitUntil: 'load' });
 await page.waitForFunction(() => document.documentElement.classList.contains('is-ready'), null, { timeout: 90000 });
 await page.waitForTimeout(800);
 
+// a live archive saves on the minute: start the take so the next save lands about 45 s in
+if (SCENE === 'hour1') { const into = Date.now() % 60000; await page.waitForTimeout((15000 - into + 60000) % 60000); }
 const cdp = await context.newCDPSession(page);
 const frames = [];
 cdp.on('Page.screencastFrame', async (f) => {
@@ -49,6 +53,19 @@ const diskOnScreen = () => page.evaluate(() => {
   return hit && { x: (hit.v.x * 0.5 + 0.5) * innerWidth, y: (-hit.v.y * 0.5 + 0.5) * innerHeight };
 });
 
+if (SCENE === 'hour1') {
+  const open = async (up) => { for (let i = 0; i < up; i++) { await page.keyboard.press('ArrowUp'); await wait(140); } await page.keyboard.press('Enter'); await wait(4200); await page.keyboard.press('Backspace'); await wait(900); };
+  await page.mouse.move(W * 0.08, H * 0.16);
+  await wait(6000);
+  await glide(W * 0.5, H * 0.5, 1400); // the live disk: the instrument shows the last thing saved
+  await wait(4000);
+  await page.evaluate(() => window.__overmind.read(window.__overmind.archive.current().disk)); // into the machine
+  await wait(4200);
+  await open(2); await open(5); await open(9);
+  await page.keyboard.press('Escape'); await wait(700); await page.keyboard.press('Escape');
+  await glide(W * 0.08, H * 0.16, 1000);
+  await wait(20000); // back at the top: the next save lands (about 10 s from here) and its note types on
+} else {
 // 1. the top of the lineage: the log, a write (≈6 s), a look inside the live disk, the seal (≈21 s), the new disk
 await page.mouse.move(W * 0.08, H * 0.16);
 await wait(9000);
@@ -86,6 +103,7 @@ await scroll(2200, 4200);
 await wait(1500);
 await scroll(-3600, 4200);
 await wait(3000);
+}
 }
 
 await cdp.send('Page.stopScreencast');

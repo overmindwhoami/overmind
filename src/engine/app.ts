@@ -12,6 +12,7 @@ import { Tracker, type TrackerContent } from '../hud/tracker';
 import { clientOf, preload, sourceFor } from '../hud/source';
 import { Sound } from '../audio/sound';
 import { SimArchive, fmtDisk, fmtTime, type Archive } from '../archive/sim';
+import { sourceName } from '../archive/types';
 import { BLUR_EVENT, FOCUS_EVENT, READ_EVENT } from '../ui/indexNav';
 import { WriteLog } from '../ui/writeLog';
 
@@ -355,7 +356,7 @@ export class App {
         link.hidden = !s?.item && !seal;
         if (s?.item) {
           link.href = s.item.url;
-          link.textContent = s.item.source === 'arxiv' ? 'Open on arXiv ↗' : s.item.source === 'wayback' ? 'Open in the Wayback Machine ↗' : 'Open on the Internet Archive ↗';
+          link.textContent = `Open on ${sourceName(s.item)} ↗`;
         } else if (seal) {
           link.href = seal;
           link.textContent = 'Seal on Solana ↗';

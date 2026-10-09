@@ -3,8 +3,10 @@
  * lineage: which disk is being written, how far along it is (the same 90 ticks as the disk's label), when the next
  * save lands, and the last few saves with the newest note typing on. When a disk seals, the log says so and starts
  * the next one. It fades away as you scroll down the lineage, where the hover instrument takes over.
+ * Above it, when the archive keeps one (the live service), the Q-Day watch: the Overmind's own guess at Q-Day with a
+ * countdown and its last move, and what it keeps an eye on (Bitcoin keys shown, Solana activity, the sun).
  */
-import { SLOTS, type Slot } from '../archive/types';
+import { SLOTS, type Slot, type Watch } from '../archive/types';
 import { fmtDisk, fmtTime, type Archive } from '../archive/sim';
 import { clientOf } from '../hud/source';
 
@@ -30,6 +32,7 @@ export class WriteLog {
   private typed = 0;
   private clock = 0;
   private lastCountdown = '';
+  private lastWatch = '';
 
   constructor(private root: HTMLElement, private archive: Archive, private reduced: () => boolean) {
     const q = <T extends HTMLElement>(s: string) => root.querySelector<T>(s)!;
@@ -85,6 +88,8 @@ export class WriteLog {
     if (countdown !== this.lastCountdown) { this.next.textContent = countdown; this.lastCountdown = countdown; }
     this.head.setAttribute('aria-label', `${this.state.textContent} ${fmtDisk(n)}, ${written} of ${SLOTS} saved`);
 
+    this.renderWatch(this.archive.watch?.());
+
     // a seal's on-chain link appears once its transaction confirms (live archive only)
     for (const e of this.entries) {
       if (e.seal === undefined || e.chain?.href) continue;
@@ -104,6 +109,31 @@ export class WriteLog {
       if (top.note.textContent!.length !== shown) top.note.textContent = top.text.slice(0, shown);
       top.note.classList.toggle('is-typing', shown < top.text.length);
     }
+  }
+
+  private renderWatch(w: Watch | undefined) {
+    const day = new Date().toISOString().slice(0, 10);
+    const key = JSON.stringify([w, day]);
+    if (key === this.lastWatch) return;
+    this.lastWatch = key;
+    const root = this.root.querySelector<HTMLElement>('[data-watch]')!;
+    root.hidden = !w?.qday;
+    if (!w?.qday) return;
+    const q = w.qday, n = (v: number) => v.toLocaleString('en-US');
+    const days = Math.round((Date.parse(q.estimate) - Date.parse(day)) / 86400_000);
+    root.querySelector('[data-qday]')!.textContent = q.estimate;
+    root.querySelector('[data-qday-left]')!.textContent = days > 0 ? `T−${n(days)} days` : 'today, by its count';
+    const move = root.querySelector<HTMLElement>('[data-qday-move]')!;
+    move.hidden = !q.shift;
+    if (q.shift) move.textContent = `${q.shift < 0 ? '▲' : '▼'} ${n(Math.abs(q.shift))} day${Math.abs(q.shift) === 1 ? '' : 's'} ${q.shift < 0 ? 'closer' : 'further'}${q.reason ? `: ${q.reason}` : ''}`;
+    const stat = (k: string, v: string | undefined) => {
+      const row = root.querySelector<HTMLElement>(`[data-stat="${k}"]`)!;
+      row.hidden = !v;
+      if (v) row.querySelector('dd')!.textContent = v;
+    };
+    stat('bitcoin', w.bitcoin ? n(w.bitcoin.spentHour) : undefined);
+    stat('solana', w.solana ? n(w.solana.txMinute) : undefined);
+    stat('space', w.space ? (w.space.storm ? `${w.space.storm} storm · Kp ${w.space.kp}` : w.space.forecast ? `quiet · ${w.space.forecast} storm watch` : `quiet · Kp ${w.space.kp}`) : undefined);
   }
 
   private slotEntry(s: Slot): Entry {

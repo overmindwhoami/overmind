@@ -1,18 +1,52 @@
 /**
  * Where the Overmind looks each minute. The dice pick a "lens", the lens asks one source for a handful of candidates,
- * and items already saved are filtered out. A modest number of requests per round (the Archive is a nonprofit).
- *   archive    a collection of the Internet Archive (software, magazines, manuals, radio, films, newsletters, texts)
- *   onthisday  Archive items dated to today's month and day in a past year
- *   qday       recent arXiv papers on quantum computing and the cryptography it threatens
- *   wayback    an old capture of a web page that mattered, from the Wayback Machine
+ * and items already saved are filtered out. One or two requests per round, to sources that need no key.
+ *
+ * The heart of it (the brief's "Internet Archive" and its neighbours):
+ *   archive     an Internet Archive collection: old floppy software, magazines, manuals, radio, films, newsletters
+ *   onthisday   Archive items dated to today's month and day in a past year
+ *   wayback     an old capture of a web page that mattered (Wayback Machine)
+ *   wikipedia   Wikipedia's "on this day": events on today's date, with the article's picture
+ *   loc         Library of Congress, Chronicling America: a newspaper printed on today's date a century or so ago
+ *   gutenberg   a book Project Gutenberg released today
+ * Q-Day watch:
+ *   arxiv       recent arXiv papers on quantum computing and the cryptography it threatens
+ *   eprint      new cryptography papers on the IACR ePrint archive
+ *   news        quantum and post-quantum stories people are discussing (Hacker News)
+ *   bitcoin     the newest Bitcoin block: every coin spent reveals the public key that guarded it
+ *   solana      the last minute on Solana, where every address is its public key from birth
+ * Flavour:
+ *   noaa        space weather alerts (solar storms really do flip bits), with today's picture of the sun
  */
-import type { Item } from './db.js';
+import type { Item, Source } from './db.js';
 import { isSeen } from './db.js';
 
-const UA = { 'User-Agent': 'OvermindArchivist/0.2 (one request a minute; contact via the project site)' };
+const UA = { 'User-Agent': 'OvermindArchivist/0.3 (one request a minute; a public archive of things worth keeping)' };
 type Rand = () => number;
 const pick = <T,>(r: Rand, list: readonly T[]) => list[Math.floor(r() * list.length)];
 
+const clean = (s: unknown) => String(Array.isArray(s) ? s[0] : s ?? '').replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, ' ')
+  .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&[a-z#0-9]+;/g, ' ')
+  .replace(/\s+/g, ' ').trim();
+const excerpt = (s: unknown, n = 420) => { const t = clean(s); return t.length <= n ? t : t.slice(0, t.lastIndexOf(' ', n)) + '…'; };
+const yearOf = (d: { year?: unknown; date?: unknown }) => { const y = Number(String(d.year ?? d.date ?? '').slice(0, 4)); return y > 1000 && y < 2100 ? y : null; };
+const fmt = (n: number) => n.toLocaleString('en-US');
+const mmdd = (now: Date) => now.toISOString().slice(5, 10);
+
+async function get(url: string, timeout = 15_000) {
+  const res = await fetch(url, { headers: UA, signal: AbortSignal.timeout(timeout) });
+  if (!res.ok) throw new Error(`${res.status} ${url}`);
+  return res;
+}
+const json = async <T,>(url: string, timeout?: number) => (await get(url, timeout)).json() as Promise<T>;
+const text = async (url: string, timeout?: number) => (await get(url, timeout)).text();
+/** <item> or <entry> blocks of an RSS/Atom feed, with a tag reader. */
+const feed = (xml: string, tag = 'item') => xml.split(`<${tag}>`).slice(1).map((e) => ({
+  get: (t: string) => (e.match(new RegExp(`<${t}[^>]*>([\\s\\S]*?)</${t}>`)) ?? [])[1] ?? '',
+  all: (t: string) => [...e.matchAll(new RegExp(`<${t}[^>]*>([\\s\\S]*?)</${t}>`, 'g'))].map((m) => m[1]),
+}));
+
+// ——— the Internet Archive ———
 const COLLECTIONS: { q: string; kind: string; pages: number }[] = [
   { q: 'collection:softwarelibrary_msdos_games AND mediatype:software', kind: 'software', pages: 40 },
   { q: 'collection:softwarelibrary_msdos AND mediatype:software', kind: 'software', pages: 20 },
@@ -28,25 +62,6 @@ const COLLECTIONS: { q: string; kind: string; pages: number }[] = [
   { q: 'collection:bitsavers AND mediatype:texts', kind: 'manual', pages: 20 },
   { q: 'mediatype:texts AND subject:(cryptography OR cipher OR codes)', kind: 'text', pages: 10 },
 ];
-const WAYBACK: [string, string][] = [
-  ['bitcoin.org', 'Bitcoin P2P e-cash, the original site'], ['www.geocities.com', 'GeoCities'], ['www.yahoo.com', 'Yahoo! directory'],
-  ['www.google.com', 'Google search'], ['www.archive.org', 'The Internet Archive'], ['www.cern.ch', 'CERN'], ['www.nasa.gov', 'NASA'],
-  ['www.slashdot.org', 'Slashdot'], ['www.metafilter.com', 'MetaFilter'], ['www.wikipedia.org', 'Wikipedia'], ['www.napster.com', 'Napster'],
-  ['www.altavista.com', 'AltaVista'], ['www.netscape.com', 'Netscape'], ['www.space-jam.com', 'Space Jam'], ['www.cypherpunks.to', 'Cypherpunks'],
-  ['www.metzdowd.com', 'The cryptography mailing list'], ['www.mozilla.org', 'Mozilla'], ['www.eff.org', 'Electronic Frontier Foundation'],
-  ['www.w3.org', 'W3C'], ['www.hotwired.com', 'HotWired'], ['www.theonion.com', 'The Onion'], ['www.ebay.com', 'eBay'], ['www.amazon.com', 'Amazon'],
-];
-
-const clean = (s: unknown) => String(Array.isArray(s) ? s[0] : s ?? '').replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/g, ' ').replace(/\s+/g, ' ').trim();
-const excerpt = (s: unknown, n = 420) => { const t = clean(s); return t.length <= n ? t : t.slice(0, t.lastIndexOf(' ', n)) + '…'; };
-const yearOf = (d: { year?: unknown; date?: unknown }) => { const y = Number(String(d.year ?? d.date ?? '').slice(0, 4)); return y > 1000 && y < 2100 ? y : null; };
-
-async function json<T>(url: string): Promise<T> {
-  const res = await fetch(url, { headers: UA, signal: AbortSignal.timeout(15000) });
-  if (!res.ok) throw new Error(`${res.status} ${url}`);
-  return res.json() as Promise<T>;
-}
-
 type Doc = { identifier: string; title?: unknown; description?: unknown; creator?: unknown; year?: unknown; date?: unknown };
 const fromDoc = (d: Doc, kind: string): Item => ({
   id: d.identifier, source: 'archive', kind, title: clean(d.title).slice(0, 140), year: yearOf(d), creator: clean(d.creator).slice(0, 80) || null,
@@ -56,80 +71,216 @@ async function search(q: string, rows: number, page: number, sort = 'downloads d
   const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}&fl[]=identifier&fl[]=title&fl[]=description&fl[]=creator&fl[]=year&fl[]=date&rows=${rows}&page=${page}&sort[]=${encodeURIComponent(sort)}&output=json`;
   return (await json<{ response?: { docs?: Doc[] } }>(url)).response?.docs ?? [];
 }
-
 async function archive(r: Rand): Promise<Item[]> {
   const c = pick(r, COLLECTIONS);
-  const docs = await search(c.q, 30, 1 + Math.floor(r() * c.pages));
-  return docs.filter((d) => d.title).map((d) => fromDoc(d, c.kind));
+  return (await search(c.q, 30, 1 + Math.floor(r() * c.pages))).filter((d) => d.title).map((d) => fromDoc(d, c.kind));
 }
-
 async function onThisDay(r: Rand, now: Date): Promise<Item[]> {
-  const md = now.toISOString().slice(5, 10);
-  for (let tries = 0; tries < 3; tries++) {
+  const md = mmdd(now);
+  for (let tries = 0; tries < 2; tries++) {
     const year = 1925 + Math.floor(r() * 85);
     const q = `date:[${year}-${md} TO ${year}-${md}] AND mediatype:(texts OR audio OR movies) AND -collection:(podcasts OR opensource_audio)`;
-    const docs = await search(q, 25, 1);
-    const items = docs.filter((d) => d.title).map((d) => fromDoc(d, 'onthisday'));
+    const items = (await search(q, 25, 1)).filter((d) => d.title).map((d) => fromDoc(d, 'onthisday'));
     if (items.length) return items;
   }
   return [];
 }
 
-async function qday(r: Rand): Promise<Item[]> {
+const WAYBACK: [string, string][] = [
+  ['bitcoin.org', 'Bitcoin P2P e-cash, the original site'], ['www.geocities.com', 'GeoCities'], ['www.yahoo.com', 'Yahoo! directory'],
+  ['www.google.com', 'Google search'], ['www.archive.org', 'The Internet Archive'], ['www.cern.ch', 'CERN'], ['www.nasa.gov', 'NASA'],
+  ['www.slashdot.org', 'Slashdot'], ['www.metafilter.com', 'MetaFilter'], ['www.wikipedia.org', 'Wikipedia'], ['www.napster.com', 'Napster'],
+  ['www.altavista.com', 'AltaVista'], ['www.netscape.com', 'Netscape'], ['www.space-jam.com', 'Space Jam'], ['www.cypherpunks.to', 'Cypherpunks'],
+  ['www.metzdowd.com', 'The cryptography mailing list'], ['www.mozilla.org', 'Mozilla'], ['www.eff.org', 'Electronic Frontier Foundation'],
+  ['www.w3.org', 'W3C'], ['www.hotwired.com', 'HotWired'], ['www.theonion.com', 'The Onion'], ['www.ebay.com', 'eBay'], ['www.amazon.com', 'Amazon'],
+];
+async function wayback(r: Rand): Promise<Item[]> {
+  const [site, title] = pick(r, WAYBACK);
+  const year = 1996 + Math.floor(r() * 14);
+  const d = await json<{ archived_snapshots?: { closest?: { available?: boolean; url?: string; timestamp?: string } } }>(
+    `https://archive.org/wayback/available?url=${encodeURIComponent(site)}&timestamp=${year}0601`);
+  const c = d.archived_snapshots?.closest;
+  if (!c?.available || !c.url || !c.timestamp) return [];
+  const date = `${c.timestamp.slice(0, 4)}-${c.timestamp.slice(4, 6)}-${c.timestamp.slice(6, 8)}`;
+  return [{ id: `wayback:${site}:${c.timestamp.slice(0, 8)}`, source: 'wayback', kind: 'web', title, year: Number(c.timestamp.slice(0, 4)), creator: site,
+    excerpt: `${site} as the Wayback Machine captured it on ${date}.`, url: c.url.replace(/^http:/, 'https:') }];
+}
+
+// ——— beyond archive.org ———
+type WikiPage = { titles?: { normalized?: string }; extract?: string; content_urls?: { desktop?: { page?: string } };
+  thumbnail?: { source?: string; width?: number }; originalimage?: { source?: string; width?: number } };
+async function wikipedia(_r: Rand, now: Date): Promise<Item[]> {
+  const [m, d] = mmdd(now).split('-');
+  const w = await json<{ selected?: { year: number; text: string; pages: WikiPage[] }[] }>(`https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/selected/${m}/${d}`);
+  return (w.selected ?? []).flatMap((e) => {
+    const p = e.pages?.[0], url = p?.content_urls?.desktop?.page, title = p?.titles?.normalized;
+    if (!p || !url || !title) return [];
+    // a picture the instrument can use: the original if it's a sensible size, else a 960 px rendition
+    const big = p.originalimage?.source && (p.originalimage.width ?? 9999) <= 2400 ? p.originalimage.source : p.thumbnail?.source?.replace(/\/\d+px-/, '/960px-');
+    return [{ id: `wikipedia:${e.year}:${title}`, source: 'wikipedia' as Source, kind: 'event', title: clean(title).slice(0, 140), year: e.year, creator: 'Wikipedia',
+      excerpt: excerpt(`${e.year}: ${e.text} ${p.extract ?? ''}`), url, image: big?.split('?')[0] }];
+  });
+}
+
+async function loc(r: Rand, now: Date): Promise<Item[]> {
+  // Chronicling America: issues printed on today's date in a year the dice choose (most digitised pages are 1880–1925)
+  for (let tries = 0; tries < 2; tries++) {
+    const year = 1880 + Math.floor(r() * 64), day = `${year}-${mmdd(now)}`;
+    const d = await json<{ results?: { title?: string; url?: string; image_url?: string[]; partof?: string[]; description?: string[] }[] }>(
+      `https://www.loc.gov/collections/chronicling-america/?dates=${day}/${day}&fo=json&c=12&at=results`, 15_000);
+    const issues = (d.results ?? []).filter((x) => x.title && x.url && x.url.includes(`/${day}/ed-`));
+    if (!issues.length) continue;
+    return issues.map((x) => {
+      // "The weekly Copiahan (Hazlehurst, Miss.), October 9, 1880" → the paper is everything before the date
+      const paper = clean(x.title).replace(/,\s*[A-Z][a-z]+ \d{1,2}, \d{4}$/, '');
+      const place = clean(x.description?.[0] ?? '');
+      return {
+        id: `loc:${x.url}`, source: 'loc' as Source, kind: 'newspaper', title: clean(x.title).slice(0, 140), year,
+        creator: paper || 'Library of Congress',
+        excerpt: `The front page of a newspaper printed on ${day}${place ? ` in ${place}` : ''}, kept by the Library of Congress in Chronicling America.`,
+        url: x.url!.replace(/^http:/, 'https:'), image: x.image_url?.[x.image_url.length - 1]?.split('#')[0],
+      };
+    });
+  }
+  return [];
+}
+
+async function gutenberg(): Promise<Item[]> {
+  return feed(await text('https://www.gutenberg.org/cache/epub/feeds/today.rss')).flatMap((e) => {
+    const link = clean(e.get('link')), id = link.match(/ebooks\/(\d+)/)?.[1];
+    if (!id) return [];
+    const full = clean(e.get('title')), cut = full.lastIndexOf(' by ');
+    const [title, author] = cut > 0 ? [full.slice(0, cut), full.slice(cut + 4)] : [full, undefined];
+    return [{ id: `gutenberg:${id}`, source: 'gutenberg' as Source, kind: 'book', title: title.slice(0, 140), year: null, creator: author ?? null,
+      excerpt: `Released on Project Gutenberg today, free for anyone, forever. ${clean(e.get('description'))}.`, url: link,
+      image: `https://www.gutenberg.org/cache/epub/${id}/pg${id}.cover.medium.jpg` }];
+  });
+}
+
+// ——— Q-Day watch ———
+async function arxiv(r: Rand): Promise<Item[]> {
   const queries = [
     'cat:quant-ph AND abs:"post-quantum"', 'cat:cs.CR AND abs:quantum', 'abs:"Shor" AND abs:"elliptic"', 'abs:"logical qubits"',
     'abs:"quantum error correction" AND abs:"threshold"', 'abs:"hash-based signature"', 'abs:"lattice" AND abs:"cryptography" AND abs:quantum',
+    'abs:"RSA-2048" AND abs:quantum', 'abs:"bitcoin" AND abs:quantum', 'abs:"harvest now"',
   ];
-  const q = pick(r, queries);
-  const res = await fetch(`https://export.arxiv.org/api/query?search_query=${encodeURIComponent(q)}&max_results=25&sortBy=submittedDate&sortOrder=descending`,
-    { headers: UA, signal: AbortSignal.timeout(20000) });
-  if (!res.ok) throw new Error(`arXiv ${res.status}`);
-  const xml = await res.text();
-  return xml.split('<entry>').slice(1).map((e) => {
-    const get = (tag: string) => (e.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`)) ?? [])[1] ?? '';
-    const id = get('id').trim().replace(/^https?:\/\/arxiv\.org\/abs\//, '').replace(/v\d+$/, '');
-    return {
-      id: `arxiv:${id}`, source: 'arxiv' as const, kind: 'paper', title: clean(get('title')).slice(0, 160), year: Number(get('published').slice(0, 4)) || null,
-      creator: clean((e.match(/<name>([^<]+)<\/name>/) ?? [])[1]) || null, excerpt: excerpt(get('summary')), url: `https://arxiv.org/abs/${id}`,
-    };
+  const xml = await text(`https://export.arxiv.org/api/query?search_query=${encodeURIComponent(pick(r, queries))}&max_results=25&sortBy=submittedDate&sortOrder=descending`, 20_000);
+  return feed(xml, 'entry').map((e) => {
+    const id = e.get('id').trim().replace(/^https?:\/\/arxiv\.org\/abs\//, '').replace(/v\d+$/, '');
+    return { id: `arxiv:${id}`, source: 'arxiv' as Source, kind: 'paper', title: clean(e.get('title')).slice(0, 160), year: Number(e.get('published').slice(0, 4)) || null,
+      creator: clean(e.all('name')[0]) || null, excerpt: excerpt(e.get('summary')), url: `https://arxiv.org/abs/${id}` };
   }).filter((i) => i.title);
 }
 
-async function wayback(r: Rand): Promise<Item[]> {
-  const out: Item[] = [];
-  for (let i = 0; i < 3; i++) {
-    const [site, title] = pick(r, WAYBACK);
-    const year = 1996 + Math.floor(r() * 14);
-    const d = await json<{ archived_snapshots?: { closest?: { available?: boolean; url?: string; timestamp?: string } } }>(
-      `https://archive.org/wayback/available?url=${encodeURIComponent(site)}&timestamp=${year}0601`);
-    const c = d.archived_snapshots?.closest;
-    if (!c?.available || !c.url || !c.timestamp) continue;
-    const y = Number(c.timestamp.slice(0, 4)), date = `${c.timestamp.slice(0, 4)}-${c.timestamp.slice(4, 6)}-${c.timestamp.slice(6, 8)}`;
-    out.push({ id: `wayback:${site}:${c.timestamp.slice(0, 8)}`, source: 'wayback', kind: 'web', title, year: y, creator: site,
-      excerpt: `${site} as the Wayback Machine captured it on ${date}.`, url: c.url.replace(/^http:/, 'https:') });
-  }
-  return out;
+const QUANTUM = /quantum|qubit|shor|grover|lattice|post-?quantum|pqc|kyber|dilithium|ml-kem|ml-dsa|sphincs|falcon|hash-based|isogen|lwe\b/i;
+async function eprint(): Promise<Item[]> {
+  const all = feed(await text('https://eprint.iacr.org/rss/rss.xml')).map((e) => {
+    const url = clean(e.get('link')), id = url.match(/eprint\.iacr\.org\/(\d{4}\/\d+)/)?.[1];
+    return { id: `eprint:${id}`, source: 'eprint' as Source, kind: 'paper', title: clean(e.get('title')).slice(0, 160), year: Number(id?.slice(0, 4)) || null,
+      creator: clean(e.all('dc:creator')[0]) || null, excerpt: excerpt(e.get('description')), url };
+  }).filter((i) => i.title && !i.id.endsWith('undefined'));
+  // the Overmind reads all of cryptography, but leans toward what Q-Day touches
+  const quantum = all.filter((i) => QUANTUM.test(`${i.title} ${i.excerpt}`));
+  return quantum.length >= 3 ? quantum : all;
 }
 
-const LENSES = [
-  { name: 'archive', w: 0.5, run: (r: Rand) => archive(r) },
-  { name: 'onthisday', w: 0.18, run: (r: Rand, now: Date) => onThisDay(r, now) },
-  { name: 'qday', w: 0.17, run: (r: Rand) => qday(r) },
-  { name: 'wayback', w: 0.15, run: (r: Rand) => wayback(r) },
-] as const;
+const Q_NEWS = /quantum|qubit|q-day|shor|post-quantum|pqc|cryptograph|encryption|ml-kem|lattice|harvest now|project eleven/i;
+async function news(r: Rand): Promise<Item[]> {
+  const q = pick(r, ['quantum computing', 'post-quantum', 'qubits', 'quantum cryptography', 'Q-Day', 'quantum bitcoin', 'Shor algorithm', 'quantum error correction', 'Project Eleven quantum']);
+  const since = Math.floor(Date.now() / 1000) - 180 * 86400;
+  const d = await json<{ hits: { objectID: string; title?: string; url?: string; author?: string; points?: number; num_comments?: number; created_at?: string; story_text?: string }[] }>(
+    `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(q)}&tags=story&numericFilters=created_at_i>${since},points>5&hitsPerPage=30`);
+  // keep it to the q-day beat (the search is generous with near matches)
+  return d.hits.filter((h) => h.title && Q_NEWS.test(h.title)).map((h) => {
+    const host = h.url ? new URL(h.url).hostname.replace(/^www\./, '') : 'news.ycombinator.com';
+    return { id: `news:${h.objectID}`, source: 'news' as Source, kind: 'news', title: clean(h.title).slice(0, 160), year: Number(h.created_at?.slice(0, 4)) || null,
+      creator: host, url: h.url ?? `https://news.ycombinator.com/item?id=${h.objectID}`,
+      excerpt: excerpt(`${h.story_text ? clean(h.story_text) + ' ' : ''}Posted ${h.created_at?.slice(0, 10)} from ${host}; ${h.points ?? 0} points and ${h.num_comments ?? 0} comments on Hacker News (news.ycombinator.com/item?id=${h.objectID}).`) };
+  });
+}
 
-/** Up to `n` unseen candidates from the lens the dice choose (falls back to the archive lens once). */
-export async function candidates(r: Rand, now: Date, n = 7): Promise<{ lens: string; items: Item[] }> {
-  let u = r(), lens: (typeof LENSES)[number] = LENSES[0];
-  for (const l of LENSES) { if (u < l.w) { lens = l; break; } u -= l.w; }
-  for (const l of [lens, LENSES[0]]) {
+type Block = { id: string; height: number; timestamp: number; tx_count: number; extras?: { totalInputs?: number; pool?: { name?: string } } };
+async function bitcoin(): Promise<Item[]> {
+  const blocks = await json<Block[]>('https://mempool.space/api/v1/blocks');
+  return blocks.slice(0, 3).map((b) => {
+    const at = new Date(b.timestamp * 1000).toISOString().slice(11, 16), inputs = b.extras?.totalInputs ?? 0;
+    return { id: `bitcoin:${b.height}`, source: 'bitcoin' as Source, kind: 'chain', title: `Bitcoin block ${fmt(b.height)}`, year: new Date(b.timestamp * 1000).getUTCFullYear(),
+      creator: b.extras?.pool?.name ? `mined by ${b.extras.pool.name}` : 'Bitcoin',
+      excerpt: `Mined at ${at} UTC with ${fmt(b.tx_count)} transactions spending ${fmt(inputs)} coins. Spending a coin reveals the public key that guarded it, and a large enough quantum computer could work back from that key.`,
+      url: `https://mempool.space/block/${b.id}` };
+  });
+}
+
+async function solana(): Promise<Item[]> {
+  const res = await fetch('https://api.mainnet-beta.solana.com', { method: 'POST', headers: { ...UA, 'content-type': 'application/json' }, signal: AbortSignal.timeout(15_000),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getRecentPerformanceSamples', params: [1] }) });
+  const s = ((await res.json()) as { result?: { slot: number; numTransactions: number; numNonVoteTransactions?: number; samplePeriodSecs: number }[] }).result?.[0];
+  if (!s) return [];
+  return [{ id: `solana:${s.slot}`, source: 'solana', kind: 'chain', title: `Solana, the minute up to slot ${fmt(s.slot)}`, year: new Date().getUTCFullYear(), creator: 'Solana mainnet',
+    excerpt: `${fmt(s.numTransactions)} transactions in ${s.samplePeriodSecs} seconds${s.numNonVoteTransactions ? ` (${fmt(s.numNonVoteTransactions)} of them not votes)` : ''}. On Solana an address is its public key, so every wallet is exposed from the day it's made.`,
+    url: `https://explorer.solana.com/block/${s.slot}` }];
+}
+
+// ——— flavour ———
+async function noaa(): Promise<Item[]> {
+  const alerts = await json<{ product_id: string; issue_datetime: string; message: string }[]>('https://services.swpc.noaa.gov/products/alerts.json');
+  const since = Date.now() - 3 * 86400_000;
+  return alerts.filter((a) => Date.parse(a.issue_datetime.replace(' ', 'T') + 'Z') > since).map((a) => {
+    const lines = a.message.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const header = /^(Space Weather Message Code|Serial Number|Issue Time|www\.|NOAA Space Weather Scale|Extends Serial Number|Cancel Serial Number)/i;
+    const headline = lines.find((l) => /^(CONTINUED |EXTENDED |CANCEL )?(WATCH|ALERT|WARNING|SUMMARY)\b/i.test(l)) ?? lines.find((l) => !header.test(l)) ?? 'Space weather message';
+    const body = lines.filter((l) => !header.test(l) && l !== headline).join(' ');
+    return { id: `noaa:${a.product_id}:${a.issue_datetime}`, source: 'noaa' as Source, kind: 'weather', title: clean(headline).slice(0, 140),
+      year: Number(a.issue_datetime.slice(0, 4)), creator: 'NOAA Space Weather Prediction Center', excerpt: excerpt(`${a.issue_datetime.slice(0, 16)} UTC. ${body}`),
+      url: 'https://www.swpc.noaa.gov/', image: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193.jpg' };
+  });
+}
+
+/** The lenses and how often the dice choose each (archive.org about 40%, the Q-Day watch about a third). */
+const LENSES: { name: string; w: number; qday?: boolean; run: (r: Rand, now: Date) => Promise<Item[]> }[] = [
+  { name: 'archive', w: 0.30, run: archive },
+  { name: 'onthisday', w: 0.06, run: onThisDay },
+  { name: 'wayback', w: 0.03, run: wayback }, // rate-limited often; when it is, the dice choose again
+  { name: 'wikipedia', w: 0.10, run: wikipedia },
+  { name: 'loc', w: 0.06, run: loc },
+  { name: 'gutenberg', w: 0.03, run: gutenberg },
+  { name: 'arxiv', w: 0.13, qday: true, run: arxiv },
+  { name: 'eprint', w: 0.07, qday: true, run: eprint },
+  { name: 'news', w: 0.09, qday: true, run: news },
+  { name: 'bitcoin', w: 0.05, qday: true, run: bitcoin },
+  { name: 'solana', w: 0.03, qday: true, run: solana },
+  { name: 'noaa', w: 0.05, run: noaa },
+];
+/** Lenses whose finds can move the Q-Day clock. */
+export const QDAY_LENSES = new Set(LENSES.filter((l) => l.qday).map((l) => l.name));
+
+/** Kept off the disks: explicit, adult and slur-laden titles (the Archive's software shelves have a few). */
+const UNSAFE = /\b(fuck\w*|shit(s|ty|ter|head)?|cunt\w*|nigg\w*|fag(got)?s?|porn\w*|xxx|sex|sexy|sexual|nude|nudity|naked|hentai|erotic\w*|playboy|penthouse|hustler|slut\w*|whore\w*|rape[sd]?|rapist|strip poker|bitch\w*|boobs?|tits)\b|adults? (only|games?|content|entertainment)/i;
+const keep = (i: Item) => !UNSAFE.test(`${i.title} ${i.excerpt}`);
+
+function choose(r: Rand, skip: Set<string>) {
+  const open = LENSES.filter((l) => !skip.has(l.name));
+  const total = open.reduce((a, l) => a + l.w, 0);
+  let u = r() * total;
+  for (const l of open) { if (u < l.w) return l; u -= l.w; }
+  return open[open.length - 1];
+}
+
+/** Up to `n` unseen candidates from the lens the dice choose; if it fails or has nothing new, the dice choose again (twice). */
+export async function candidates(r: Rand, now: Date, n = 7, only?: string): Promise<{ lens: string; items: Item[] }> {
+  const tried = new Set<string>();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const l = only ? LENSES.find((x) => x.name === only)! : choose(r, tried);
+    tried.add(l.name);
     try {
       const found = await l.run(r, now);
       const seen = await isSeen(found.map((i) => i.id));
-      const fresh = found.filter((i) => !seen.has(i.id));
+      const fresh = found.filter((i) => !seen.has(i.id) && keep(i));
       for (let i = fresh.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [fresh[i], fresh[j]] = [fresh[j], fresh[i]]; }
       if (fresh.length) return { lens: l.name, items: fresh.slice(0, n) };
     } catch (e) { console.warn('lens failed', l.name, String(e).slice(0, 160)); }
+    if (only) break;
   }
-  return { lens: lens.name, items: [] };
+  return { lens: [...tried].join('/'), items: [] };
 }
+export const LENS_NAMES = LENSES.map((l) => l.name);

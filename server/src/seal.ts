@@ -12,6 +12,7 @@ export const slotRecord = (s: SlotRow) => ({
   k: s.k, time: new Date(s.time).toISOString(), note: s.note, file: s.file, model: s.model,
   dice: { source: s.dice.source, round: s.dice.round, value: s.dice.value },
   item: s.item && { id: s.item.id, source: s.item.source, kind: s.item.kind, title: s.item.title, year: s.item.year, creator: s.item.creator, url: s.item.url },
+  qday: s.qday_shift ?? undefined, // only on saves that moved the clock (older records hash exactly as before)
 });
 
 /** The exact text that is hashed: anyone can fetch it (GET /api/disks/:n/record), SHA-256 it and compare with the chain. */

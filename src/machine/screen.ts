@@ -8,6 +8,7 @@
  */
 import * as THREE from 'three';
 import { fmtDate, fmtDisk, fmtTime } from '../archive/sim';
+import { sourceName } from '../archive/types';
 import { SLOTS, SLOT_BYTES, type Disk, type Slot } from '../archive/types';
 import { isPlaying, type Source } from '../hud/source';
 
@@ -131,7 +132,7 @@ export class ScreenRenderer {
     titleLines.forEach((l, i) => g.fillText(l, tx, py + 48 + i * 32));
     let ty = py + 48 + titleLines.length * 32 + 4;
     g.fillStyle = '#222'; g.font = SERIF(17, 700);
-    g.fillText([item.year, item.creator, item.source === 'arxiv' ? 'arXiv' : item.source === 'wayback' ? 'Wayback Machine' : 'Internet Archive'].filter(Boolean).join(' · '), tx, ty);
+    g.fillText([item.year, item.creator, sourceName(item)].filter(Boolean).join(' · '), tx, ty);
     ty += 30;
     g.fillStyle = '#000';
     for (const l of this.wrap(item.excerpt || '(no description)', SERIF(19), tw).slice(0, 6)) { g.font = SERIF(19); g.fillText(l, tx, ty); ty += 25; }

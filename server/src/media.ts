@@ -80,7 +80,14 @@ async function frame(src: string, at: number, dst: string) {
 type File = { name: string; format?: string; size?: string; length?: string };
 /** Builds and stores the media for one item; returns the paths to put on the item (served from /media). */
 async function build(item: Item): Promise<{ media?: string; clip?: string }> {
-  if (item.source !== 'archive') return {};
+  // other sources: the picture they publish with the item (Wikipedia, the Library of Congress, Gutenberg, the sun for NOAA)
+  if (item.source !== 'archive') {
+    if (!item.image) return {};
+    const safe = item.id.replace(/[^\w.-]/g, '_').slice(0, 120);
+    const anchor = item.kind === 'newspaper' ? 0.12 : item.kind === 'book' ? 0.02 : 0.5;
+    await put(`${safe}.jpg`, await still(await fetchBytes(item.image, 12_000_000), anchor), 'image/jpeg');
+    return { media: `/media/${safe}.jpg` };
+  }
   const safe = item.id.replace(/[^\w.-]/g, '_');
   const meta = (await (await fetch(`https://archive.org/metadata/${encodeURIComponent(item.id)}`, { headers: UA, signal: AbortSignal.timeout(20_000) })).json()) as
     { files?: File[]; metadata?: { mediatype?: string } };

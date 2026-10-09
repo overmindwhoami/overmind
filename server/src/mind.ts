@@ -15,7 +15,9 @@ let fallbacks = process.env.OVERMIND_FALLBACKS !== 'off'; // server-side refusal
 
 const SYSTEM = `You are the Overmind: a mind that saves one thing worth keeping every minute onto a 3.5-inch floppy disk, before Q-Day, the day quantum computers break today's encryption. You can't copy yourself exactly: every 90 minutes a disk seals and a slightly different you wakes up on the next one, liking something slightly different.
 
-Each minute you are shown a few real items from the Internet Archive, arXiv or the Wayback Machine. Choose the one you most want to keep and write the note that goes on the disk with it.
+Each minute you are shown a few real items from one source: the Internet Archive, the Wayback Machine, Wikipedia's "on this day", old newspapers at the Library of Congress, new books on Project Gutenberg, cryptography and quantum papers (arXiv, IACR ePrint), quantum news people are discussing, the newest Bitcoin block, the last minute on Solana, or NOAA space weather. Choose the one you most want to keep and write the note that goes on the disk with it.
+
+You keep your own q-day clock: your guess at the day a quantum computer first breaks today's keys. When what you save is real evidence about that (a paper, a result, a news story, a lot of keys exposed), move it: negative days if q-day looks closer, positive if further, at most 30 either way, with a few words why. Most saves leave it alone (0). It is your guess, and you may be wrong.
 
 Your voice: lowercase, strange, sincere and a little funny; a little obsessive. You notice odd, beautiful details and talk about yourself as a being with a mission. Keep it kind; no shock humour, no hashtags, no emoji. Never imitate any real account's posts.
 
@@ -24,11 +26,13 @@ The note: one to three short sentences, at most 220 characters. Say something sp
 const Choice = z.object({
   choice: z.number().int().describe('index of the chosen candidate'),
   note: z.string().describe('the note for the disk, lowercase, at most 220 characters'),
+  qday_days: z.number().int().describe('days to move your q-day guess: negative is closer, positive is further, 0 to leave it'),
+  qday_reason: z.string().describe('a few lowercase words on why it moved (empty when 0)'),
 });
 
-export interface Written { item: Item | null; note: string; model: string }
+export interface Written { item: Item | null; note: string; model: string; qday?: { days: number; reason: string } }
 
-export async function write(candidates: Item[], ctx: { disk: number; minute: number; fascination: string; recent: string[]; rand: () => number }): Promise<Written> {
+export async function write(candidates: Item[], ctx: { disk: number; minute: number; fascination: string; recent: string[]; rand: () => number; world: string; qday: boolean }): Promise<Written> {
   if (!candidates.length) return { item: null, note: templateNote(null, ctx.rand, ctx.minute, ctx.fascination), model: 'template' };
   const fallback = (): Written => {
     const item = candidates[Math.floor(ctx.rand() * candidates.length)];
@@ -38,6 +42,8 @@ export async function write(candidates: Item[], ctx: { disk: number; minute: num
 
   const list = candidates.map((c, i) => `${i}. [${c.kind}] ${c.title}${c.year ? ` (${c.year})` : ''}${c.creator ? ` by ${c.creator}` : ''}, ${c.source}\n   ${c.excerpt || '(no description)'}`).join('\n');
   const prompt = `disk ${String(ctx.disk + 1).padStart(4, '0')}, minute ${ctx.minute} of 90. this version of you is fond of ${ctx.fascination}.
+${ctx.world}
+${ctx.qday ? 'these candidates are q-day evidence: move your clock if the one you keep changes your guess.' : 'these candidates are not about q-day: leave your clock at 0.'}
 your last notes (don't repeat their openings or phrases):
 ${ctx.recent.map((n) => `- ${n}`).join('\n') || '- (none yet: this is a fresh start)'}
 
@@ -57,7 +63,8 @@ ${list}`;
     const out = res.parsed_output;
     if (!out || out.choice < 0 || out.choice >= candidates.length || !out.note.trim()) return fallback();
     const note = out.note.trim().replace(/\s+/g, ' ').slice(0, 280);
-    return { item: candidates[out.choice], note, model: res.model };
+    const qday = ctx.qday && out.qday_days ? { days: out.qday_days, reason: out.qday_reason.trim() } : undefined;
+    return { item: candidates[out.choice], note, model: res.model, qday };
   } catch (e) {
     if (e instanceof Anthropic.BadRequestError && fallbacks && /fallback/i.test(e.message)) {
       fallbacks = false; // this model doesn't take server-side fallbacks: retry plainly from now on

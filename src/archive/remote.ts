@@ -5,7 +5,7 @@
  * (a slot every minute, its media a little later, the seal, the next disk).
  */
 import { lookOf, pseudoFingerprint } from './sim';
-import { SLOTS, type Archive, type Disk, type Item, type Slot } from './types';
+import { SLOTS, type Archive, type Disk, type Item, type Slot, type Watch } from './types';
 
 type DiskJson = {
   n: number; seed: number; fascination: string; written: number; sealed: boolean; fingerprint: string | null; startedAt: number; sealedAt: number | null;
@@ -23,6 +23,7 @@ export class RemoteArchive implements Archive {
   private nextAt = 0;
   private offset = 0;
   private stale = false;
+  private watched?: Watch;
 
   constructor(base: string) { this.base = base.replace(/\/+$/, ''); }
 
@@ -41,6 +42,7 @@ export class RemoteArchive implements Archive {
   now() { return Date.now() + this.offset; }
   current() { return { disk: this.cur.disk, written: Math.min(this.cur.written, SLOTS), msToNext: Math.max(0, this.nextAt - Date.now()) }; }
   sealedCount() { return this.cur.disk; }
+  watch() { return this.watched; }
 
   disk(n: number): Disk {
     const d = this.disks.get(n);
@@ -82,7 +84,8 @@ export class RemoteArchive implements Archive {
 
   /** The state, the top of the lineage and the live disk's slots (on start, and after the event stream drops). */
   private async sync() {
-    const st = await this.get<{ now: number; disk: DiskJson | null; msToNext: number }>('/api/state');
+    const st = await this.get<{ now: number; disk: DiskJson | null; msToNext: number; watch?: Watch }>('/api/state');
+    this.watched = st.watch;
     this.offset = st.now - Date.now();
     this.nextAt = Date.now() + st.msToNext;
     if (st.disk) { this.putDisk(st.disk); this.cur = { disk: st.disk.n, written: st.disk.written }; }
@@ -127,6 +130,7 @@ export class RemoteArchive implements Archive {
       if (!this.slots.has(d.n)) this.slots.set(d.n, []);
       if (d.n > this.cur.disk) this.cur = { disk: d.n, written: d.written };
     });
+    es.addEventListener('watch', (e) => { this.watched = JSON.parse((e as MessageEvent).data) as Watch; });
     es.onerror = () => { this.stale = true; };
     es.onopen = () => { if (this.stale) { this.stale = false; void this.sync(); } };
   }

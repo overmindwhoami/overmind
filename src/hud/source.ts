@@ -7,7 +7,7 @@
  * Items without a picture get the reference's card: the name in 700 92px capitals on black, the source below.
  * Every box of the instrument is a window onto this one shared picture.
  */
-import type { Item } from '../archive/types';
+import { sourceName, type Item } from '../archive/types';
 
 export const MEDIA = { still: { width: 640, height: 360 }, sample: { width: 96, height: 54 }, pixels: { width: 28, height: 16 } } as const;
 const SANS = '"Helvetica Neue", Helvetica, Arial, sans-serif';
@@ -68,7 +68,7 @@ function analyse(s: Source) {
 
 /** The source line under a card: who made it, or where it lives. */
 export const clientOf = (item: Item | undefined) =>
-  !item ? 'Nothing came through' : item.creator ?? (item.source === 'arxiv' ? 'arXiv' : item.source === 'wayback' ? 'Wayback Machine' : 'Internet Archive');
+  !item ? 'Nothing came through' : item.creator ?? sourceName(item);
 
 const cache = new Map<string, Source>();
 /** The source for an item (one per item, reused). `undefined` gives the empty-slot card, or `card` when given. */

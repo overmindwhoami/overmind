@@ -1,7 +1,23 @@
 /** Archive model: one real item saved per slot, 90 slots per disk, sealed disks form the lineage. */
+
+/** Where a saved item came from, and how the site names it. */
+export type ItemSource = 'archive' | 'wayback' | 'arxiv' | 'eprint' | 'news' | 'bitcoin' | 'solana' | 'noaa' | 'wikipedia' | 'loc' | 'gutenberg';
+export const SOURCE_NAMES: Record<ItemSource, string> = {
+  archive: 'Internet Archive', wayback: 'Wayback Machine', arxiv: 'arXiv', eprint: 'IACR ePrint', news: 'Hacker News',
+  bitcoin: 'mempool.space', solana: 'Solana Explorer', noaa: 'NOAA Space Weather', wikipedia: 'Wikipedia', loc: 'Library of Congress', gutenberg: 'Project Gutenberg',
+};
+export const sourceName = (item: { source: string }) => SOURCE_NAMES[item.source as ItemSource] ?? item.source;
+
+/** The live Overmind's Q-Day watch (absent in the simulator). */
+export interface Watch {
+  qday: { estimate: string; shift: number | null; reason: string | null; at: number } | null;
+  bitcoin: { spentHour: number; blocks: number; height: number; at: number } | null;
+  solana: { txMinute: number; slot: number; at: number } | null;
+  space: { kp: number; storm: string | null; forecast: string | null; at: number } | null;
+}
 export interface Item {
   id: string;
-  source: 'archive' | 'arxiv' | 'wayback';
+  source: ItemSource;
   kind: string;
   title: string;
   year: number | null;
@@ -58,4 +74,6 @@ export interface Archive {
   written(n: number): Slot[];
   /** Resolves when the archive can answer for the top of the lineage. */
   load(): Promise<void>;
+  /** The Q-Day watch, when the archive keeps one (the live service does). */
+  watch?(): Watch | undefined;
 }

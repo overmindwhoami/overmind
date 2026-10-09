@@ -7,7 +7,8 @@ import { EventEmitter } from 'node:events';
 import { createDisk, currentDisk, pendingSeals, recentNotes, sealDisk, setSealTx, slots, updateSlotMedia, writeSlot, type DiskRow, type SlotRow } from './db.js';
 import { CLUSTER, explorer, forgetBalance, record, walletInfo } from './chain.js';
 import { roll, stream } from './dice.js';
-import { candidates } from './sources.js';
+import { candidates, QDAY_LENSES } from './sources.js';
+import { context, moveQday } from './watch.js';
 import { write } from './mind.js';
 import { enqueue } from './media.js';
 import { fingerprint } from './seal.js';
@@ -71,11 +72,14 @@ export async function round(now = new Date()): Promise<SlotRow | undefined> {
     const k = d.written;
     const dice = await roll();
     const rand = stream(dice.value, k);
-    const { lens, items } = await candidates(rand, now);
-    const w = await write(items, { disk: d.n, minute: k + 1, fascination: d.fascination, recent: await recentNotes(6), rand });
-    const slot = await writeSlot({ disk: d.n, k, item: w.item, note: w.note, file: fileName(w.item, k), dice, model: w.model });
+    const { lens, items } = await candidates(rand, now, 7, process.env.ONLY_LENS);
+    const qdayLens = QDAY_LENSES.has(lens);
+    const w = await write(items, { disk: d.n, minute: k + 1, fascination: d.fascination, recent: await recentNotes(6), rand, world: context(), qday: qdayLens });
+    // the clock only moves on q-day evidence, and only by what the mind decided
+    const moved = w.qday && qdayLens ? await moveQday(w.qday.days, w.qday.reason) : 0;
+    const slot = await writeSlot({ disk: d.n, k, item: w.item, note: w.note, file: fileName(w.item, k), dice, model: w.model, qday_shift: moved || null });
     events.emit('slot', slot);
-    console.log(`${d.n}:${k} [${lens}/${dice.source}/${w.model}] ${w.item?.title ?? '(gap)'} — ${w.note}`);
+    console.log(`${d.n}:${k} [${lens}/${dice.source}/${w.model}] ${w.item?.title ?? '(gap)'} — ${w.note}${moved ? ` (q-day ${moved > 0 ? '+' : ''}${moved}d)` : ''}`);
     if (w.item) {
       const item = w.item;
       enqueue(item, async (m) => {

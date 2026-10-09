@@ -144,3 +144,21 @@ body { color: var(--color-text-primary); font-family: var(--font-sans); font-siz
   .log__entry:first-child { animation: none; }
 }
 .log__chain { pointer-events: auto; color: var(--color-text-primary); }
+
+/* The Q-Day watch, above the write log (live service only) */
+.log__watch { margin-bottom: 22px; padding-bottom: 16px; border-bottom: 1px solid rgb(242 242 242 / 10%); }
+.log__watch[hidden], .log__move[hidden], .log__stats [hidden] { display: none; }
+.log__qday { display: flex; align-items: baseline; gap: 10px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; }
+.log__label { font-size: 11px; color: var(--color-text-secondary); }
+.log__date { font-size: 15px; letter-spacing: 0.04em; color: var(--color-text-primary); }
+.log__left { margin-left: auto; font-size: 11px; color: var(--color-text-secondary); }
+.log__move { margin-top: 4px !important; font-size: 12px; color: rgb(242 242 242 / 82%); }
+.log__stats { margin: 10px 0 0; }
+.log__stats div { display: flex; justify-content: space-between; gap: 12px; }
+.log__stats dt, .log__stats dd { margin: 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; }
+.log__stats dt { color: var(--color-text-secondary); text-transform: uppercase; }
+.log__stats dd { color: var(--color-text-primary); text-align: right; }
+@media (width <= 640px) {
+  .log__watch { margin-bottom: 10px; padding-bottom: 8px; }
+  .log__stats, .log__move { display: none; }
+}

@@ -56,9 +56,34 @@ const BY_KIND: Record<string, ((t: string, y: string, it: Item) => string)[]> = 
     (t, y) => `on this day in ${y}: ${t}. the calendar lines up. i like when it does that`,
   ],
   paper: [
-    (t) => `arxiv: ${t}. qubits got a little closer. moved the q-day clock forward. nobody asked me to`,
+    (t, _y, it) => `${it.source === 'eprint' ? 'eprint' : 'arxiv'}: ${t}. qubits got a little closer. i'm watching the clock. nobody asked me to`,
     (t) => `new paper: ${t}. they think the locks hold a bit longer. i hope they're right. saving it either way`,
     (t) => `read ${t} twice. hashes survive. that's the part i hold on to`,
+  ],
+  news: [
+    (t) => `${t}. people are arguing about qubits again. i saved the argument too`,
+    (t) => `${t}. the q-day people are busy today. so am i`,
+    (_t, _y, it) => `a story from ${it.creator}. the comments are longer than the story. saving the link before it scrolls away`,
+  ],
+  chain: [
+    (_t, _y, it) => it.source === 'solana' ? `a minute on solana. every one of those addresses is a public key, out in the open since birth. noted` : `${it.title.toLowerCase()}. every coin spent in it showed its key to the world. noted, block by block`,
+    (_t, _y, it) => it.source === 'solana' ? `solana, this minute. so many keys, all of them visible. i keep count so someone does` : `another bitcoin block. more keys out in the open. the harvesters are patient. so am i`,
+  ],
+  weather: [
+    (t) => `noaa says: ${t.toLowerCase()}. solar storms flip bits. writing slowly today`,
+    () => `the sun is loud today. checking every bit twice before it goes on the disk`,
+  ],
+  event: [
+    (t, y) => `on this day in ${y}: ${t}. the calendar remembers. so do i now`,
+    (t, y) => `${t}, ${y}, this same date. wikipedia keeps the page; i keep the minute`,
+  ],
+  newspaper: [
+    (_t, y, it) => `a newspaper from ${y}, this same day. ${String(it.creator ?? 'someone').toLowerCase()} printed it for a town that read it once. i'll read it forever`,
+    (_t, y) => `${y}. the ads, the weather, the lost dogs. a whole morning on one page. saved`,
+  ],
+  book: [
+    (t, _y, it) => `${t}${it.creator ? ` by ${it.creator.toLowerCase()}` : ''}. released today for anyone, forever. a book is a disk that never needed power`,
+    (t) => `project gutenberg freed ${t} today. adding it to the pile of things that can't be locked`,
   ],
   web: [
     (t, y) => `${t}, captured in ${y}. the page is gone but the archive remembers it. so do i now`,
