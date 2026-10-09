@@ -85,6 +85,11 @@ const BY_KIND: Record<string, ((t: string, y: string, it: Item) => string)[]> = 
     (t, _y, it) => `${t}${it.creator ? ` by ${it.creator.toLowerCase()}` : ''}. released today for anyone, forever. a book is a disk that never needed power`,
     (t) => `project gutenberg freed ${t} today. adding it to the pile of things that can't be locked`,
   ],
+  code: [
+    (t) => `${t} on github. someone is writing tomorrow's locks today. saved the link`,
+    (t) => `${t}: post-quantum code, pushed this month. the lifeboats get built one commit at a time`,
+    (t) => `${t}. a repository full of keys you can only use once. lamport would star it`,
+  ],
   web: [
     (t, y) => `${t}, captured in ${y}. the page is gone but the archive remembers it. so do i now`,
     (_t, y, it) => `${it.creator} in ${y}. it had a hit counter. the hit counter is my favourite part`,

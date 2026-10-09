@@ -5,6 +5,7 @@
 // stops there, the full flow goes on to a sealed disk, reading it in the machine and the lineage.
 // SCENE=hour1 QUERY='&api=<url>' records a live (or rehearsal) Overmind an hour after launch: disk 0001 two-thirds
 // full, the Q-Day watch, a look inside, reading the disk in the machine, and a real save landing on the minute.
+// SCENE=minute0 records launch itself: the blank genesis disk, the empty stack, then the first two saves landing.
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { launch } from './lib.mjs';
@@ -31,7 +32,10 @@ await page.waitForFunction(() => document.documentElement.classList.contains('is
 await page.waitForTimeout(800);
 
 // a live archive saves on the minute: start the take so the next save lands about 45 s in
-if (SCENE === 'hour1') { const into = Date.now() % 60000; await page.waitForTimeout((15000 - into + 60000) % 60000); }
+if (SCENE === 'hour1' || SCENE === 'minute0') {
+  const at = SCENE === 'hour1' ? 15000 : 38000, into = Date.now() % 60000;
+  await page.waitForTimeout((at - into + 60000) % 60000);
+}
 const cdp = await context.newCDPSession(page);
 const frames = [];
 cdp.on('Page.screencastFrame', async (f) => {
@@ -53,7 +57,26 @@ const diskOnScreen = () => page.evaluate(() => {
   return hit && { x: (hit.v.x * 0.5 + 0.5) * innerWidth, y: (-hit.v.y * 0.5 + 0.5) * innerHeight };
 });
 
-if (SCENE === 'hour1') {
+if (SCENE === 'minute0') {
+  // the take starts 22 s before the first save
+  await page.mouse.move(W * 0.08, H * 0.16);
+  await wait(5500);
+  await glide(W * 0.5, H * 0.5, 1200); // the blank disk: the instrument says so
+  await wait(3500);
+  await page.evaluate(() => window.__overmind.read(0)); // nothing on it yet
+  await wait(5000);
+  await page.keyboard.press('Escape'); await wait(600); await page.keyboard.press('Escape');
+  await glide(W * 0.08, H * 0.16, 1000);
+  await wait(13000); // the first save lands and its note types on
+  await glide(W * 0.5, H * 0.5, 1400); // and now the disk holds something
+  await wait(5000);
+  await glide(W * 0.18, H * 0.55, 900);
+  await scroll(500, 1500); // below the genesis disk: nothing yet; the first disk seals at minute 90
+  await wait(3500);
+  await scroll(-700, 1500);
+  await glide(W * 0.08, H * 0.16, 1000);
+  await wait(40000); // the second save, a minute after the first, and its note typing on
+} else if (SCENE === 'hour1') {
   const open = async (up) => { for (let i = 0; i < up; i++) { await page.keyboard.press('ArrowUp'); await wait(140); } await page.keyboard.press('Enter'); await wait(4200); await page.keyboard.press('Backspace'); await wait(900); };
   await page.mouse.move(W * 0.08, H * 0.16);
   await wait(6000);

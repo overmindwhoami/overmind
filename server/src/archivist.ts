@@ -13,6 +13,12 @@ import { write } from './mind.js';
 import { enqueue } from './media.js';
 import { fingerprint } from './seal.js';
 import { fascinationOf, fileName } from './voice.js';
+import { GENESIS } from './genesis.js';
+
+/** The first saves of disk 0001 are the genesis hour (src/genesis.ts); GENESIS=off skips it. */
+const GENESIS_ON = process.env.GENESIS !== 'off';
+/** The first few disks lean into the lore (sources.ts weights them; the mind is told). */
+export const EARLY_DISKS = 4;
 
 export const SLOTS = 90;
 export const events = new EventEmitter();
@@ -60,9 +66,14 @@ export async function anchorPending() {
   for (const d of pending) if (d.fingerprint) await anchor(d.n, d.fingerprint);
 }
 
+/** At launch (an empty lineage), disk 0001 exists from the first second: blank, waiting for the first save. */
+export async function ensureDisk() {
+  if (!(await currentDisk())) await startDisk(0);
+}
+
 let running = false;
 /** Writes the next slot (and seals and starts disks as needed). Returns the slot written, or undefined if a round is already running. */
-export async function round(now = new Date()): Promise<SlotRow | undefined> {
+export async function round(now = new Date(), at?: number): Promise<SlotRow | undefined> {
   if (running) return undefined;
   running = true;
   try {
@@ -72,10 +83,19 @@ export async function round(now = new Date()): Promise<SlotRow | undefined> {
     const k = d.written;
     const dice = await roll();
     const rand = stream(dice.value, k);
-    const { lens, items } = await candidates(rand, now, 7, process.env.ONLY_LENS);
-    const qdayLens = QDAY_LENSES.has(lens);
-    const w = await write(items, { disk: d.n, minute: k + 1, fascination: d.fascination, recent: await recentNotes(6), rand, world: context(), qday: qdayLens });
+    const g = GENESIS_ON && d.n === 0 ? GENESIS[k] : undefined;
+    let lens: string, qdayLens: boolean, w: Awaited<ReturnType<typeof write>>;
+    if (g) {
+      // the genesis hour: written before launch, saved on the minute like everything else
+      lens = 'genesis'; qdayLens = !!g.qday;
+      w = { item: g.item, note: g.note, model: 'genesis', qday: g.qday };
+    } else {
+      const found = await candidates(rand, now, 7, process.env.ONLY_LENS, d.n < EARLY_DISKS);
+      lens = found.lens; qdayLens = QDAY_LENSES.has(lens);
+      w = await write(found.items, { disk: d.n, minute: k + 1, fascination: d.fascination, recent: await recentNotes(6), rand, world: context(), qday: qdayLens, early: d.n < EARLY_DISKS });
+    }
     // the clock only moves on q-day evidence, and only by what the mind decided
+    if (at && at > Date.now()) await new Promise((r) => setTimeout(r, at - Date.now())); // write on the minute
     const moved = w.qday && qdayLens ? await moveQday(w.qday.days, w.qday.reason) : 0;
     const slot = await writeSlot({ disk: d.n, k, item: w.item, note: w.note, file: fileName(w.item, k), dice, model: w.model, qday_shift: moved || null });
     events.emit('slot', slot);

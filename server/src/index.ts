@@ -10,7 +10,7 @@
  */
 import { createServer, type ServerResponse } from 'node:http';
 import { currentDisk, disks, migrate, pool, slots, type DiskRow, type SlotRow } from './db.js';
-import { anchorPending, events, round, SLOTS } from './archivist.js';
+import { anchorPending, ensureDisk, events, round, SLOTS } from './archivist.js';
 import { explorer, signer, walletInfo } from './chain.js';
 import { recordText } from './seal.js';
 import { refreshWatch, watch, watchEvents } from './watch.js';
@@ -49,7 +49,7 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/api/state') {
       const d = await currentDisk();
-      return send(res, 200, { now: Date.now(), slots: SLOTS, disk: d ? diskJson(d) : null, msToNext: Math.max(0, nextAt - Date.now()), watch });
+      return send(res, 200, { now: Date.now(), slots: SLOTS, disk: d ? diskJson(d) : null, msToNext: Math.max(0, nextAt - Date.now()), watch, launchAt: Number.isNaN(LAUNCH_AT) ? null : LAUNCH_AT });
     }
     if (path === '/api/disks') {
       const from = Math.max(0, Number(url.searchParams.get('from') ?? 0) | 0);
@@ -105,17 +105,27 @@ const server = createServer(async (req, res) => {
   }
 });
 
-/** Rounds on the minute (plus a moment, so the clock has rolled over everywhere). */
+/**
+ * Saves land on the minute: each round starts LEAD early (dice, sources, the mind take a few seconds) and writes its
+ * slot at the minute itself (plus a moment, so the clock has rolled over everywhere).
+ */
+const LEAD = 20_000;
+/** LAUNCH_AT (ISO time): asleep until then; the first save lands on the launch minute. */
+const LAUNCH_AT = process.env.LAUNCH_AT ? Date.parse(process.env.LAUNCH_AT) : NaN;
 function schedule() {
-  const wait = EVERY === 60_000 ? 60_000 - (Date.now() % 60_000) + 400 : EVERY;
-  nextAt = Date.now() + wait;
+  const minute = EVERY === 60_000;
+  const from = Number.isNaN(LAUNCH_AT) ? Date.now() : Math.max(Date.now(), LAUNCH_AT - 400);
+  const at = minute ? from - (from % 60_000) + 60_400 : Date.now() + EVERY;
+  const start = minute && at - LEAD > Date.now() + 1000 ? at - LEAD : at;
+  nextAt = at;
   setTimeout(async () => {
-    schedule();
-    try { await round(); } catch (e) { console.error('round failed', e); }
-  }, wait);
+    setTimeout(schedule, Math.max(0, at - Date.now()) + 50); // the next round is planned once this minute has turned
+    try { await round(new Date(), at); } catch (e) { console.error('round failed', e); }
+  }, start - Date.now());
 }
 
 await migrate();
+await ensureDisk();
 const w = await signer();
 console.log(`sealing on ${process.env.SOLANA_CLUSTER ?? 'devnet'} from ${w.publicKey.toBase58()}`);
 setInterval(() => { anchorPending().catch((e) => console.warn('anchor retry failed', e)); }, 5 * 60_000);

@@ -1,12 +1,17 @@
 /** Archive model: one real item saved per slot, 90 slots per disk, sealed disks form the lineage. */
 
 /** Where a saved item came from, and how the site names it. */
-export type ItemSource = 'archive' | 'wayback' | 'arxiv' | 'eprint' | 'news' | 'bitcoin' | 'solana' | 'noaa' | 'wikipedia' | 'loc' | 'gutenberg';
+export type ItemSource = 'archive' | 'wayback' | 'arxiv' | 'eprint' | 'news' | 'bitcoin' | 'solana' | 'noaa' | 'wikipedia' | 'loc' | 'gutenberg' | 'github' | 'web';
 export const SOURCE_NAMES: Record<ItemSource, string> = {
   archive: 'Internet Archive', wayback: 'Wayback Machine', arxiv: 'arXiv', eprint: 'IACR ePrint', news: 'Hacker News',
   bitcoin: 'mempool.space', solana: 'Solana Explorer', noaa: 'NOAA Space Weather', wikipedia: 'Wikipedia', loc: 'Library of Congress', gutenberg: 'Project Gutenberg',
+  github: 'GitHub', web: 'the web',
 };
-export const sourceName = (item: { source: string }) => SOURCE_NAMES[item.source as ItemSource] ?? item.source;
+/** How the site names where an item lives (a page on the open web is named by its site). */
+export const sourceName = (item: { source: string; url?: string }) => {
+  if (item.source === 'web' && item.url) try { return new URL(item.url).hostname.replace(/^www\./, ''); } catch { /* fall through */ }
+  return SOURCE_NAMES[item.source as ItemSource] ?? item.source;
+};
 
 /** The live Overmind's Q-Day watch (absent in the simulator). */
 export interface Watch {

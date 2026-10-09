@@ -14,6 +14,19 @@ const SHOWN = 5; // entries in the list (the newest with its note)
 const TYPE_RATE = 46; // characters per second for the newest note
 const SEAL_HOLD = 7; // seconds the header says "sealed" before the next disk starts
 
+/** 0:42 under an hour; 14h 05m under a day; then days. */
+const wait = (ms: number) => {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h < 24 ? `${h}h ${String(m).padStart(2, '0')}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
+};
+/** "on Oct 10 at 17:00 UTC" */
+const wakeTime = (t: number) => {
+  const d = new Date(t);
+  return `on ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} at ${d.toISOString().slice(11, 16)} UTC`;
+};
+
 type Entry = { key: string; el: HTMLLIElement; note?: HTMLElement; text?: string; seal?: number; chain?: HTMLAnchorElement };
 
 export class WriteLog {
@@ -78,17 +91,32 @@ export class WriteLog {
     const sealing = this.clock < this.sealUntil;
     const n = sealing ? this.sealedDisk : cur.disk;
     const written = sealing ? SLOTS : cur.written;
-    this.root.classList.toggle('is-sealed', sealing);
-    this.state.textContent = sealing ? 'Sealed' : 'Writing';
+    const sleeping = !sealing && cur.written === 0 && cur.msToNext > 120_000; // before launch
+    this.root.classList.toggle('is-sealed', sealing || sleeping);
+    this.state.textContent = sealing ? 'Sealed' : sleeping ? 'Asleep' : 'Writing';
     this.disk.textContent = fmtDisk(n);
     this.fill.style.width = `${(written / SLOTS) * 100}%`;
     this.count.textContent = `${written} / ${SLOTS}`;
-    const secs = Math.ceil(cur.msToNext / 1000);
-    const countdown = sealing ? 'write-protect on' : cur.written === 0 ? `blank · first save in 0:${String(secs).padStart(2, '0')}` : `next save in 0:${String(Math.min(59, secs)).padStart(2, '0')}`;
+    const asleep = cur.written === 0 && cur.msToNext > 120_000; // before launch: the Overmind hasn't woken yet
+    const countdown = sealing ? 'write-protect on' : asleep ? `asleep · wakes in ${wait(cur.msToNext)}` : cur.written === 0 ? `blank · first save in ${wait(cur.msToNext)}` : `next save in ${wait(Math.min(cur.msToNext, 59_000))}`;
     if (countdown !== this.lastCountdown) { this.next.textContent = countdown; this.lastCountdown = countdown; }
     this.head.setAttribute('aria-label', `${this.state.textContent} ${fmtDisk(n)}, ${written} of ${SLOTS} saved`);
 
     this.renderWatch(this.archive.watch?.());
+
+    // before the first save of a disk: say it's blank (at launch, that's the genesis disk)
+    if (!this.entries.length && !this.list.querySelector('.log__empty')) {
+      const li = document.createElement('li');
+      li.className = 'log__entry log__empty';
+      this.list.append(li);
+    }
+    const empty = this.list.querySelector<HTMLElement>('.log__empty');
+    if (empty) {
+      const text = cur.written === 0 && cur.msToNext > 120_000
+        ? `Genesis. The Overmind is asleep. It wakes ${wakeTime(this.archive.now() + cur.msToNext)}, and the first thing lands that minute.`
+        : cur.disk === 0 ? 'Genesis. Nothing saved yet: the first thing lands at the top of the minute.' : 'Blank. The first thing lands at the top of the minute.';
+      if (empty.textContent !== text) empty.textContent = text;
+    }
 
     // a seal's on-chain link appears once its transaction confirms (live archive only)
     for (const e of this.entries) {
@@ -163,6 +191,7 @@ export class WriteLog {
     if (this.entries.some((x) => x.key === e.key)) return;
     const prev = this.entries[0];
     if (prev?.note && prev.text) { prev.note.textContent = prev.text; prev.note.classList.remove('is-typing'); }
+    this.list.querySelector('.log__empty')?.remove();
     this.entries.unshift(e);
     this.list.prepend(e.el);
     while (this.entries.length > SHOWN) this.entries.pop()!.el.remove();

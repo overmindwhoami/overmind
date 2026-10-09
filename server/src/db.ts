@@ -9,7 +9,7 @@ export const pool = new pg.Pool({
 
 export interface Dice { source: 'curby' | 'drand' | 'local'; round: number; value: string; quantum: boolean; at: string; note?: string }
 /** Where an item came from (the site names each one). */
-export type Source = 'archive' | 'wayback' | 'arxiv' | 'eprint' | 'news' | 'bitcoin' | 'solana' | 'noaa' | 'wikipedia' | 'loc' | 'gutenberg';
+export type Source = 'archive' | 'wayback' | 'arxiv' | 'eprint' | 'news' | 'bitcoin' | 'solana' | 'noaa' | 'wikipedia' | 'loc' | 'gutenberg' | 'github' | 'web';
 export interface Item {
   id: string; source: Source; kind: string; title: string; year: number | null; creator: string | null;
   excerpt: string; url: string; media?: string; clip?: string;
@@ -118,7 +118,7 @@ export async function pendingSeals(): Promise<DiskRow[]> {
 }
 /** Launch: empties the lineage (disks, slots, the seen list). The wallet is kept. Only run on purpose. */
 export async function resetLineage() {
-  await pool.query(`truncate slots, disks, seen`);
+  await pool.query(`truncate slots, disks, seen; delete from qday`); // the q-day guess starts over from QDAY_START too
 }
 export async function isSeen(ids: string[]) {
   if (!ids.length) return new Set<string>();

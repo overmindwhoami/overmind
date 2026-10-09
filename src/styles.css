@@ -162,3 +162,4 @@ body { color: var(--color-text-primary); font-family: var(--font-sans); font-siz
   .log__watch { margin-bottom: 10px; padding-bottom: 8px; }
   .log__stats, .log__move { display: none; }
 }
+.log__empty { display: block; color: var(--color-text-secondary); }

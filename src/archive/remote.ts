@@ -19,6 +19,7 @@ export class RemoteArchive implements Archive {
   private disks = new Map<number, Disk>();
   private slots = new Map<number, Slot[]>();
   private pending = new Set<string>();
+  private fetchedAt = new Map<string, number>(); // what was asked recently (a disk that doesn't exist yet isn't asked for every frame)
   private cur = { disk: 0, written: 0 };
   private nextAt = 0;
   private offset = 0;
@@ -70,9 +71,10 @@ export class RemoteArchive implements Archive {
     return res.json() as Promise<T>;
   }
   private async fetch<T>(key: string, path: string, apply: (data: T) => void) {
-    if (this.pending.has(key)) return;
+    if (this.pending.has(key) || Date.now() - (this.fetchedAt.get(key) ?? 0) < 10_000) return;
     this.pending.add(key);
-    try { apply(await this.get<T>(path)); } catch (e) { console.warn('archive', path, e); setTimeout(() => this.pending.delete(key), 10_000); return; }
+    try { apply(await this.get<T>(path)); } catch (e) { console.warn('archive', path, e); }
+    this.fetchedAt.set(key, Date.now());
     this.pending.delete(key);
   }
   private fetchSlots(n: number) {
@@ -90,6 +92,7 @@ export class RemoteArchive implements Archive {
     this.nextAt = Date.now() + st.msToNext;
     if (st.disk) { this.putDisk(st.disk); this.cur = { disk: st.disk.n, written: st.disk.written }; }
     this.pending.clear();
+    this.fetchedAt.clear();
     const from = Math.max(0, this.cur.disk - RANGE + 1);
     await Promise.all([
       this.fetch(`disks:${from}`, `/api/disks?from=${from}&to=${this.cur.disk}`, (list: DiskJson[]) => list.forEach((x) => this.putDisk(x))),

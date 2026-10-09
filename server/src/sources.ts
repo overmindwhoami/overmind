@@ -15,8 +15,10 @@
  *   news        quantum and post-quantum stories people are discussing (Hacker News)
  *   bitcoin     the newest Bitcoin block: every coin spent reveals the public key that guarded it
  *   solana      the last minute on Solana, where every address is its public key from birth
+ *   github      post-quantum code people are writing right now (repositories pushed this month)
  * Flavour:
  *   noaa        space weather alerts (solar storms really do flip bits), with today's picture of the sun
+ * The first few disks lean into the lore: more Q-Day watch, GitHub, and a lore lens of floppy and cryptography history.
  */
 import type { Item, Source } from './db.js';
 import { isSeen } from './db.js';
@@ -221,6 +223,33 @@ async function solana(): Promise<Item[]> {
     url: `https://explorer.solana.com/block/${s.slot}` }];
 }
 
+const GITHUB_TOPICS = ['post-quantum', 'ml-kem', 'ml-dsa', 'slh-dsa', 'sphincs', 'lamport signature', 'winternitz', 'quantum resistant bitcoin', 'kyber', 'dilithium', 'pqc', 'hash-based signatures', 'quantum-safe'];
+async function github(r: Rand): Promise<Item[]> {
+  const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+  const d = await json<{ items?: { full_name: string; html_url: string; description?: string; stargazers_count: number; created_at: string; pushed_at: string; owner: { login: string } }[] }>(
+    `https://api.github.com/search/repositories?q=${encodeURIComponent(`${pick(r, GITHUB_TOPICS)} pushed:>${since}`)}&sort=stars&order=desc&per_page=25`);
+  return (d.items ?? []).filter((x) => x.description).map((x) => ({
+    id: `github:${x.full_name}`, source: 'github' as Source, kind: 'code', title: x.full_name, year: Number(x.created_at.slice(0, 4)), creator: x.owner.login,
+    excerpt: excerpt(`${x.description} · ${fmt(x.stargazers_count)} stars · last pushed ${x.pushed_at.slice(0, 10)}.`), url: x.html_url,
+    image: `https://opengraph.githubassets.com/1/${x.full_name}`,
+  }));
+}
+
+/** The lore lens: the Archive's own shelves on floppy disks, cryptography and the early internet. */
+const LORE: { q: string; kind: string }[] = [
+  { q: 'title:(floppy OR diskette OR microfloppy) AND mediatype:texts', kind: 'manual' },
+  { q: 'collection:bitsavers AND title:(floppy OR diskette)', kind: 'manual' },
+  { q: 'subject:(cryptography OR "public key" OR encryption) AND mediatype:texts', kind: 'text' },
+  { q: 'subject:(cypherpunk OR cypherpunks OR PGP)', kind: 'text' },
+  { q: 'title:(quantum) AND mediatype:(texts OR movies) AND year:[1900 TO 2005]', kind: 'text' },
+  { q: 'subject:("computer history" OR "history of computing") AND mediatype:(texts OR movies)', kind: 'text' },
+  { q: 'title:(backup OR "data storage" OR "magnetic media") AND mediatype:(texts OR movies)', kind: 'manual' },
+];
+async function lore(r: Rand): Promise<Item[]> {
+  const c = pick(r, LORE);
+  return (await search(c.q, 30, 1 + Math.floor(r() * 5))).filter((d) => d.title).map((d) => fromDoc(d, c.kind));
+}
+
 // ——— flavour ———
 async function noaa(): Promise<Item[]> {
   const alerts = await json<{ product_id: string; issue_datetime: string; message: string }[]>('https://services.swpc.noaa.gov/products/alerts.json');
@@ -236,20 +265,25 @@ async function noaa(): Promise<Item[]> {
   });
 }
 
-/** The lenses and how often the dice choose each (archive.org about 40%, the Q-Day watch about a third). */
-const LENSES: { name: string; w: number; qday?: boolean; run: (r: Rand, now: Date) => Promise<Item[]> }[] = [
-  { name: 'archive', w: 0.30, run: archive },
-  { name: 'onthisday', w: 0.06, run: onThisDay },
-  { name: 'wayback', w: 0.03, run: wayback }, // rate-limited often; when it is, the dice choose again
-  { name: 'wikipedia', w: 0.10, run: wikipedia },
-  { name: 'loc', w: 0.06, run: loc },
-  { name: 'gutenberg', w: 0.03, run: gutenberg },
-  { name: 'arxiv', w: 0.13, qday: true, run: arxiv },
-  { name: 'eprint', w: 0.07, qday: true, run: eprint },
-  { name: 'news', w: 0.09, qday: true, run: news },
-  { name: 'bitcoin', w: 0.05, qday: true, run: bitcoin },
-  { name: 'solana', w: 0.03, qday: true, run: solana },
-  { name: 'noaa', w: 0.05, run: noaa },
+/**
+ * The lenses and how often the dice choose each: w normally (archive.org about 40%, the Q-Day watch about a third),
+ * early for the first few disks (the lore: Q-Day watch and GitHub about half, floppy and crypto history a seventh).
+ */
+const LENSES: { name: string; w: number; early: number; qday?: boolean; run: (r: Rand, now: Date) => Promise<Item[]> }[] = [
+  { name: 'archive', w: 0.28, early: 0.14, run: archive },
+  { name: 'onthisday', w: 0.06, early: 0.04, run: onThisDay },
+  { name: 'wayback', w: 0.03, early: 0.03, run: wayback }, // rate-limited often; when it is, the dice choose again
+  { name: 'wikipedia', w: 0.08, early: 0.08, run: wikipedia },
+  { name: 'loc', w: 0.06, early: 0.04, run: loc },
+  { name: 'gutenberg', w: 0.03, early: 0.02, run: gutenberg },
+  { name: 'lore', w: 0, early: 0.14, run: lore },
+  { name: 'arxiv', w: 0.13, early: 0.14, qday: true, run: arxiv },
+  { name: 'eprint', w: 0.07, early: 0.08, qday: true, run: eprint },
+  { name: 'news', w: 0.09, early: 0.10, qday: true, run: news },
+  { name: 'bitcoin', w: 0.05, early: 0.05, qday: true, run: bitcoin },
+  { name: 'solana', w: 0.03, early: 0.03, qday: true, run: solana },
+  { name: 'github', w: 0.04, early: 0.08, qday: true, run: github },
+  { name: 'noaa', w: 0.05, early: 0.03, run: noaa },
 ];
 /** Lenses whose finds can move the Q-Day clock. */
 export const QDAY_LENSES = new Set(LENSES.filter((l) => l.qday).map((l) => l.name));
@@ -258,19 +292,20 @@ export const QDAY_LENSES = new Set(LENSES.filter((l) => l.qday).map((l) => l.nam
 const UNSAFE = /\b(fuck\w*|shit(s|ty|ter|head)?|cunt\w*|nigg\w*|fag(got)?s?|porn\w*|xxx|sex|sexy|sexual|nude|nudity|naked|hentai|erotic\w*|playboy|penthouse|hustler|slut\w*|whore\w*|rape[sd]?|rapist|strip poker|bitch\w*|boobs?|tits)\b|adults? (only|games?|content|entertainment)/i;
 const keep = (i: Item) => !UNSAFE.test(`${i.title} ${i.excerpt}`);
 
-function choose(r: Rand, skip: Set<string>) {
-  const open = LENSES.filter((l) => !skip.has(l.name));
-  const total = open.reduce((a, l) => a + l.w, 0);
+function choose(r: Rand, skip: Set<string>, early: boolean) {
+  const weight = (l: (typeof LENSES)[number]) => (early ? l.early : l.w);
+  const open = LENSES.filter((l) => !skip.has(l.name) && weight(l) > 0);
+  const total = open.reduce((a, l) => a + weight(l), 0);
   let u = r() * total;
-  for (const l of open) { if (u < l.w) return l; u -= l.w; }
+  for (const l of open) { if (u < weight(l)) return l; u -= weight(l); }
   return open[open.length - 1];
 }
 
 /** Up to `n` unseen candidates from the lens the dice choose; if it fails or has nothing new, the dice choose again (twice). */
-export async function candidates(r: Rand, now: Date, n = 7, only?: string): Promise<{ lens: string; items: Item[] }> {
+export async function candidates(r: Rand, now: Date, n = 7, only?: string, early = false): Promise<{ lens: string; items: Item[] }> {
   const tried = new Set<string>();
   for (let attempt = 0; attempt < 3; attempt++) {
-    const l = only ? LENSES.find((x) => x.name === only)! : choose(r, tried);
+    const l = only ? LENSES.find((x) => x.name === only)! : choose(r, tried, early);
     tried.add(l.name);
     try {
       const found = await l.run(r, now);

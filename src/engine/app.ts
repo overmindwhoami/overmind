@@ -254,7 +254,7 @@ export class App {
       name: item?.title ?? (slot ? 'Nothing came through' : `${fmtDisk(n)}`),
       client: slot ? clientOf(item) : 'Blank disk, waiting for the first slot',
       year: item?.year ? String(item.year) : slot ? fmtTime(slot.time) : 'now',
-      host: hostOf(item?.url),
+      host: slot ? hostOf(item?.url) : 'live', // a blank disk isn't offline: it's about to be written
       url: item?.url,
       source: slot ? sourceFor(item) : sourceFor(undefined, { key: `blank-${n}`, name: fmtDisk(n), client: 'Blank · writing begins' }),
     };
@@ -356,7 +356,7 @@ export class App {
         link.hidden = !s?.item && !seal;
         if (s?.item) {
           link.href = s.item.url;
-          link.textContent = `Open on ${sourceName(s.item)} ↗`;
+          link.textContent = `Open on ${sourceName(s.item)} ↗`; // a web page is named by its site
         } else if (seal) {
           link.href = seal;
           link.textContent = 'Seal on Solana ↗';
