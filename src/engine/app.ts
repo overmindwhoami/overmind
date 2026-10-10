@@ -20,6 +20,7 @@ import { WriteLog } from '../ui/writeLog';
 import { Story, type Line } from '../ui/story';
 import { Walkthrough, type Rect, type TourStop } from '../ui/walkthrough';
 import { PAGE_COUNT, drawPage, pages, type Receipts } from '../machine/docs';
+import { Terminal } from '../ui/terminal';
 import spec from './tower-spec.json';
 
 const INTERFACE = 'a, button, .lil-gui';
@@ -144,6 +145,20 @@ export class App {
   private intro = { stage: 'off' as 'off' | 'on', i: 0, since: 0 };
   /** Docs: the page being read, and the spread printed on the manual now. */
   private docsPage = 0;
+  private terminal!: Terminal;
+  private termForm = document.querySelector<HTMLFormElement>('[data-term]');
+  private termLog = document.querySelector<HTMLElement>('[data-term-log]');
+  private termKey = '';
+  /** The phone's transcript of the terminal (the CRT is too small to read there). */
+  private updateTermLog() {
+    const el = this.termLog;
+    if (!el || this.place !== 'terminal') return;
+    const lines = this.terminal.lines.slice(-14);
+    const key = lines.map((l) => `${l.at}:${this.terminal.shown(l)}`).join('|');
+    if (key === this.termKey) return;
+    this.termKey = key;
+    el.replaceChildren(...lines.map((l) => { const p = document.createElement('p'); p.className = `is-${l.who}`; p.textContent = l.text.slice(0, this.terminal.shown(l)); return p; }));
+  }
   private docsSpread = -1; // the printed spread (×2, +1 for the large-print edition)
   private pager = { root: document.querySelector<HTMLElement>('[data-pager]'), label: document.querySelector<HTMLElement>('[data-page-label]') };
 
@@ -185,6 +200,16 @@ export class App {
     this.tracker = new Tracker({ onLock: this.sound.lock, onTick: this.sound.tick, reduced: () => this.reduced });
     const storyRoot = document.querySelector<HTMLElement>('[data-story]');
     for (const b of document.querySelectorAll<HTMLButtonElement>('[data-page]')) b.addEventListener('click', () => this.turnDocs(Number(b.dataset.page)));
+    // the terminal: one conversation for the visit; typing goes to the screen as it's typed
+    this.terminal = new Terminal(this.archive, (this.archive as { endpoint?: string }).endpoint, () => this.station?.touch());
+    const form = document.querySelector<HTMLFormElement>('[data-term]'), field = form?.querySelector<HTMLInputElement>('input');
+    field?.addEventListener('input', () => { this.terminal.input = field.value; this.station.touch(); });
+    form?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!field) return;
+      const q = field.value; field.value = ''; this.terminal.input = '';
+      void this.terminal.submit(q);
+    });
     if (storyRoot) this.story = new Story(storyRoot, () => this.checkDisk(), () => this.reduced, () => this.startIntro());
     const logRoot = document.querySelector<HTMLElement>('[data-log]');
     if (logRoot) this.log = new WriteLog(logRoot, this.archive, () => this.reduced);
@@ -347,6 +372,7 @@ export class App {
     this.roomHover = this.place === 'room' && this.flightT >= 1 && this.isPointerInside && !this.isOverInterface && !this.isTouch ? this.roomPick() : undefined;
     this.updateRoomLabel();
     this.updateTags();
+    this.updateTermLog();
     if (this.station.reading || this.place !== 'tower' || this.flightT < 1 || this.tour.active) this.hover = undefined;
     else if (this.focused) this.hover = this.focused;
     else {
@@ -623,6 +649,15 @@ export class App {
     this.flightT = 0;
     this.room.clean(name, CLEAN_LAYER);
     if (name === 'docs') { this.room.docsPage = this.docsPage; void this.printDocs(); }
+    // the terminal: the screen switches to the conversation and the input opens (focused now, inside the click, so a
+    // phone's keyboard comes up)
+    this.station.terminal = name === 'terminal' ? this.terminal : undefined;
+    this.station.touch();
+    if (this.termForm) {
+      this.termForm.hidden = name !== 'terminal';
+      if (this.termLog) this.termLog.hidden = name !== 'terminal';
+      if (name === 'terminal') this.termForm.querySelector('input')?.focus({ preventScroll: true });
+    }
     window.dispatchEvent(new Event('placechange')); // the menu marks where the camera is going
     this.updatePager();
     const label = PLACES.find((p) => p.name === name)?.label;
@@ -638,7 +673,7 @@ export class App {
     const e = ease(this.flightT);
     let pos: THREE.Vector3, look: THREE.Vector3, up = new THREE.Vector3(0, 1, 0), focus: number;
     if (this.place === 'tower') { pos = this.camera.position.clone(); look = this.lookAt.clone(); up = this.camera.up.clone(); focus = DRIFT.focusBase + settings.focus; }
-    else if (this.place === 'terminal') { const r = this.station.readerCamera(this.camera); pos = r.pos; look = r.look; focus = r.distance; }
+    else if (this.place === 'terminal') { const r = this.station.readerCamera(this.camera, window.innerWidth <= 640 && this.camera.aspect < 0.8 ? 0.5 : 0); pos = r.pos; look = r.look; focus = r.distance; }
     else { const v = this.room.view(this.place, this.camera, this.place === 'room' ? this.roomYaw : 0); pos = v.pos; look = v.look; focus = v.distance; if ('up' in v && v.up) up = v.up; }
     if (this.place === 'room') pos.add(new THREE.Vector3(this.pointer.x * 0.9, this.pointer.y * 0.45, 0)); // a little parallax over the room
     const from = this.flightFrom, lift = from.pos.distanceTo(pos) * 0.12;
@@ -791,6 +826,11 @@ export class App {
   };
 
   onKeyDown = (e: { key: string; preventDefault?: () => void }) => {
+    // typing into the terminal: the page's own keys stay out of it (Esc leaves)
+    if (document.activeElement instanceof HTMLInputElement) {
+      if (e.key === 'Escape') { document.activeElement.blur(); this.go('room'); }
+      return;
+    }
     if (!this.ready || (e.key !== 'Tab' && e.key !== 'Shift' && this.introInput(e.key))) return;
     if (e.key === 'm' || e.key === 'M') { this.sound.toggle(!this.sound.enabled); return; }
     if (this.station.reading) { if (this.station.key(e.key)) e.preventDefault?.(); return; }

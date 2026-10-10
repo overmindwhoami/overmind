@@ -41,6 +41,12 @@
       </nav>
       <button class="back" data-go="room" type="button" hidden>Back to the room <span aria-hidden="true">(esc)</span></button>
       <p class="room-label" data-room-label aria-hidden="true" hidden></p>
+      <div class="term-log" data-term-log aria-live="polite" hidden></div>
+      <form class="term-input" data-term hidden autocomplete="off">
+        <label class="term-input__prompt" for="term-field">A:\&gt;</label>
+        <input class="term-input__field" id="term-field" name="q" type="text" maxlength="400" enterkeyhint="send" autocapitalize="off" spellcheck="false" placeholder="talk to the overmind, or type HELP" />
+        <button class="term-input__send" type="submit">send ⏎</button>
+      </form>
       <div class="pager" data-pager hidden>
         <button class="pager__btn" data-page="-1" type="button" aria-label="Previous page">‹ prev</button>
         <span class="pager__label" data-page-label></span>

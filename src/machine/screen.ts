@@ -17,7 +17,8 @@ export type ScreenState =
   | { mode: 'live'; disk: Disk; slot?: Slot; typed: number; source?: Source; clock: number }
   | { mode: 'load'; disk: Disk; t: number; clock: number }
   | { mode: 'dir'; disk: Disk; slots: Slot[]; selected: number; scroll: number; clock: number; check?: CheckView }
-  | { mode: 'entry'; disk: Disk; slot: Slot; source?: Source; clock: number };
+  | { mode: 'entry'; disk: Disk; slot: Slot; source?: Source; clock: number }
+  | { mode: 'term'; lines: { who: 'you' | 'om' | 'sys'; text: string; shown: number }[]; input: string; busy: boolean; clock: number };
 export interface Hit { kind: 'row' | 'link' | 'back' | 'eject' | 'check' | 'seal'; index?: number }
 /** CHECK as it prints: seconds since it started, and what it found (or why it couldn't run). */
 export interface CheckView { t: number; result?: Verification; error?: string }
@@ -55,6 +56,7 @@ export class ScreenRenderer {
     if (s.mode === 'live') this.live(s);
     else if (s.mode === 'load') this.load(s);
     else if (s.mode === 'dir') this.dir(s);
+    else if (s.mode === 'term') this.term(s);
     else this.entry(s);
     // scanlines and the tube's vignette
     g.fillStyle = 'rgba(0,0,0,0.1)'; for (let y = 0; y < H; y += 3) g.fillRect(0, y, W, 1);
@@ -172,6 +174,37 @@ export class ScreenRenderer {
     lines.forEach((l, i) => g.fillText(l, OX + 16, OY + 160 + i * 21));
     const last = lines[lines.length - 1] ?? '';
     if (Math.floor(s.clock / 500) % 2 === 0 || s.typed < 1) g.fillRect(OX + 18 + g.measureText(last).width, OY + 160 + (lines.length - 1) * 21 - 15, 9, 18);
+    g.shadowBlur = 0;
+  }
+
+  /** The terminal: the conversation, newest at the bottom, the visitor's line under it. */
+  private term(s: Extract<ScreenState, { mode: 'term' }>) {
+    const g = this.g, x = 14, y = 38, w = W - 28, h = H - 50, pad = 22, lh = 25;
+    this.window(x, y, w, h, 'OVERMIND — A:\\ — TERMINAL', true);
+    g.font = MONO(18);
+    // wrap every line, keep what fits above the input line
+    const rows: { text: string; color: string; glow: boolean }[] = [];
+    for (const l of s.lines) {
+      const prefix = l.who === 'you' ? 'A:\\> ' : l.who === 'om' ? '> ' : '';
+      const body = l.text.slice(0, l.shown);
+      const wrapped = this.wrap(prefix + body, MONO(18), w - pad * 2);
+      const color = l.who === 'you' ? '#9a9a9a' : l.who === 'om' ? '#f0f0f0' : '#7c7c7c';
+      wrapped.forEach((t) => rows.push({ text: t, color, glow: l.who === 'om' }));
+      if (l.who !== 'sys') rows.push({ text: '', color, glow: false });
+    }
+    const room = Math.floor((h - 26 - pad - 60) / lh);
+    const visible = rows.slice(-room);
+    visible.forEach((r, i) => {
+      g.fillStyle = r.color; g.shadowColor = 'rgba(255,255,255,0.45)'; g.shadowBlur = r.glow ? 6 : 0;
+      g.fillText(r.text, x + pad, y + 26 + pad + 18 + i * lh);
+    });
+    // the input line
+    g.shadowBlur = 0; g.fillStyle = '#2a2a2a'; g.fillRect(x + 10, y + h - 54, w - 20, 1);
+    g.font = MONO(19, 600); g.fillStyle = '#e6e6e6'; g.shadowBlur = 6;
+    const prompt = s.busy ? '…' : `A:\\> ${s.input}`;
+    const fitted = this.wrap(prompt, MONO(19, 600), w - pad * 2 - 20).slice(-1)[0] ?? '';
+    g.fillText(fitted, x + pad, y + h - 22);
+    if (!s.busy && Math.floor(s.clock / 500) % 2 === 0) g.fillRect(x + pad + g.measureText(fitted).width + 3, y + h - 38, 11, 20);
     g.shadowBlur = 0;
   }
 

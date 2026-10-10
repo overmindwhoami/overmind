@@ -12,6 +12,7 @@ import { MM, type FloppyKit } from './floppy/kit';
 import type { GlassUniforms } from './floppy/materials';
 import type { Archive } from '../archive/sim';
 import type { Slot, Verification } from '../archive/types';
+import type { Terminal } from '../ui/terminal';
 import { sourceFor, isPlaying } from '../hud/source';
 
 /** Objects on this layer keep (mild) colour through the post chain. */
@@ -69,12 +70,14 @@ export class Station {
   }
 
   /** Where the camera stands to read the screen (fits the picture with a margin). */
-  readerCamera(camera: THREE.PerspectiveCamera) {
+  /** Square onto the screen; `raise` (0–1 of the half-height) lifts the screen up the frame (a phone's terminal keeps the bottom for the transcript). */
+  readerCamera(camera: THREE.PerspectiveCamera, raise = 0) {
     const centre = this.root.localToWorld(new THREE.Vector3(SCREEN.x * MM, SCREEN.y * MM, SCREEN.z * MM));
     const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(this.root.quaternion);
     const t = Math.tan((camera.fov * Math.PI) / 360);
     const d = Math.max((SCREEN.h * MM * 1.22) / 2 / t, (SCREEN.w * MM * 1.12) / 2 / (t * camera.aspect));
-    return { pos: centre.clone().addScaledVector(normal, d), look: centre, distance: d };
+    const down = new THREE.Vector3(0, -1, 0).applyQuaternion(this.root.quaternion).multiplyScalar(raise * d * t);
+    return { pos: centre.clone().addScaledVector(normal, d).add(down), look: centre.clone().add(down), distance: d };
   }
 
   /** World matrix of a disk sitting in the drive, `out` of the slot by `s` (0 = fully in, 1 = at the slot). */
@@ -86,6 +89,10 @@ export class Station {
 
   /** CHECK on the screen: when it started, and what it found (or why it couldn't). */
   private checking?: { at: number; result?: Verification; error?: string };
+  /** The terminal, while the visitor is at it (the screen shows it instead of the live page). */
+  terminal?: Terminal;
+  /** Redraw the screen on the next frame (the terminal changed). */
+  touch() { this.redraw = 0; }
   private autoCheck = false;
 
   /** Re-checks the disk in the drive (sealed disks only): the record re-hashed here, against its seal and the chain. */
@@ -162,6 +169,14 @@ export class Station {
         if (c && t < 4) { this.redraw = 1 / 20; return; } // the check prints out line by line
       }
       this.redraw = this.view === 'entry' && this.playing && isPlaying(this.playing) ? 1 / 15 : 0.25;
+      return;
+    }
+    // the terminal, while the visitor is at it
+    if (this.terminal) {
+      if (this.redraw > 0) return;
+      const t = this.terminal;
+      this.screen.draw({ mode: 'term', lines: t.lines.map((l) => ({ who: l.who, text: l.text, shown: t.shown(l) })), input: t.input, busy: t.busy, clock });
+      this.redraw = t.typing ? 1 / 30 : 0.25;
       return;
     }
     // live: the page being saved and the note typing in the writer window

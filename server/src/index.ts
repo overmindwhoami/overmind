@@ -11,11 +11,12 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { currentDisk, disks, migrate, pool, slots, type DiskRow, type SlotRow } from './db.js';
 import { anchorPending, ensureDisk, events, round, SLOTS } from './archivist.js';
-import { explorer, signer, walletInfo } from './chain.js';
+import { balanceOf, explorer, signer, walletInfo } from './chain.js';
 import { recordText } from './seal.js';
 import { refreshWatch, watch, watchEvents } from './watch.js';
 import { get as getMedia, mediaOptions, storage } from './media.js';
 import { MODEL } from './mind.js';
+import { talk } from './talk.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const EVERY = Number(process.env.ROUND_EVERY_MS ?? 60_000);
@@ -49,8 +50,23 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
   try {
-    if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET', 'access-control-max-age': '86400' }); return res.end(); }
+    if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '86400' }); return res.end(); }
+    // the terminal: the only thing a visitor can send
+    if (req.method === 'POST' && path === '/api/chat') {
+      let raw = '';
+      for await (const chunk of req) { raw += chunk; if (raw.length > 8_000) return send(res, 413, { error: 'too long' }); }
+      let body: { messages?: { role: 'user' | 'assistant'; content: string }[] } = {};
+      try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'bad json' }); }
+      const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
+      return send(res, 200, await talk(ip, Array.isArray(body.messages) ? body.messages : []));
+    }
     if (req.method !== 'GET') return send(res, 405, { error: 'read only' });
+    if (path === '/api/balance') {
+      const address = url.searchParams.get('address') ?? '';
+      if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) return send(res, 400, { error: 'not an address' });
+      const sol = await balanceOf(address);
+      return sol === undefined ? send(res, 502, { error: 'no answer' }) : send(res, 200, { address, sol });
+    }
     if (path === '/health') {
       const d = await currentDisk();
       return send(res, 200, { ok: true, disk: d?.n ?? null, written: d?.written ?? 0, model: process.env.ANTHROPIC_API_KEY ? MODEL : 'template (no ANTHROPIC_API_KEY)', storage, wallet: await walletInfo() });

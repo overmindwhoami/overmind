@@ -30,6 +30,8 @@ export class RemoteArchive implements Archive {
   private every = 60_000;
 
   constructor(base: string) { this.base = base.replace(/\/+$/, ''); }
+  /** The service's address (the terminal talks to it). */
+  get endpoint() { return this.base; }
 
   /** Never fails the page: if the service can't be reached, it keeps trying (the event stream reconnects and resyncs). */
   async load() {

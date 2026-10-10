@@ -49,6 +49,14 @@ export async function walletInfo(): Promise<WalletInfo> {
 }
 export const forgetBalance = () => { cached = undefined; };
 
+/** Any wallet's SOL balance (the terminal's EXPOSED command; browsers can't call the public RPC themselves). */
+export async function balanceOf(address: string): Promise<number | undefined> {
+  let key: PublicKey;
+  try { key = new PublicKey(address); } catch { return undefined; }
+  const lamports = await Promise.race([connection.getBalance(key), new Promise<undefined>((r) => setTimeout(() => r(undefined), 5000))]).catch(() => undefined);
+  return lamports === undefined ? undefined : lamports / LAMPORTS_PER_SOL;
+}
+
 /** Writes a memo signed by the service wallet and waits for confirmation; returns the transaction signature. */
 export async function memo(text: string): Promise<string> {
   const k = await signer();
