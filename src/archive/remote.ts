@@ -5,7 +5,7 @@
  * (a slot every minute, its media a little later, the seal, the next disk).
  */
 import { lookOf, pseudoFingerprint } from './sim';
-import { SLOTS, type Archive, type Disk, type Item, type Slot, type Verification, type Watch } from './types';
+import { SLOTS, type Archive, type Coin, type Disk, type Item, type Slot, type Verification, type Watch } from './types';
 
 type DiskJson = {
   n: number; seed: number; fascination: string; written: number; sealed: boolean; fingerprint: string | null; startedAt: number; sealedAt: number | null;
@@ -189,6 +189,10 @@ export class RemoteArchive implements Archive {
   /** The sealing wallet, as the service reports it (address and balance in SOL; null while unknown). */
   async wallet(): Promise<{ address: string; balance: number | null } | undefined> {
     try { return (await this.get<{ wallet?: { address: string; balance: number | null } }>('/health')).wallet; } catch { return undefined; }
+  }
+
+  async coin(): Promise<Coin | undefined> {
+    try { return await this.get<Coin>('/api/coin'); } catch { return undefined; }
   }
 
   /** The lineage went backwards: it was reset (at launch). Everything on the page belongs to the old one, so start over. */

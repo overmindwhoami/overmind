@@ -5,6 +5,7 @@
  *   GET /api/disks?from=&to=    disks in a range (at most 200)
  *   GET /api/disks/:n           one disk with its slots
  *   GET /api/events             server-sent events: slot, media, seal, disk
+ *   GET /api/coin               $OMD's numbers for the board (DexScreener, cached a minute; none until OMD_MINT is set)
  *   GET /media/:key             the instrument's stills and loops (CORS, immutable)
  * ROUND_EVERY_MS overrides the minute (local testing only).
  */
@@ -12,6 +13,7 @@ import { createServer, type ServerResponse } from 'node:http';
 import { currentDisk, disks, migrate, pool, slots, type DiskRow, type SlotRow } from './db.js';
 import { anchorPending, ensureDisk, events, round, SLOTS } from './archivist.js';
 import { balanceOf, explorer, signer, walletInfo } from './chain.js';
+import { coin } from './coin.js';
 import { recordText } from './seal.js';
 import { refreshWatch, watch, watchEvents } from './watch.js';
 import { get as getMedia, mediaOptions, storage } from './media.js';
@@ -67,6 +69,7 @@ const server = createServer(async (req, res) => {
       const sol = await balanceOf(address);
       return sol === undefined ? send(res, 502, { error: 'no answer' }) : send(res, 200, { address, sol });
     }
+    if (path === '/api/coin') return send(res, 200, await coin());
     if (path === '/health') {
       const d = await currentDisk();
       return send(res, 200, { ok: true, disk: d?.n ?? null, written: d?.written ?? 0, model: process.env.ANTHROPIC_API_KEY ? MODEL : 'template (no ANTHROPIC_API_KEY)', storage, wallet: await walletInfo() });

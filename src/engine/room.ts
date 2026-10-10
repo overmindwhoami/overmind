@@ -20,6 +20,7 @@ import { Duplicator, DUP } from '../machine/duplicator';
 import { buildWall, slot as wallSlot, SLOTS as WALL_SLOTS, WALL } from '../machine/wall';
 import { Vending, VEND, VEND_TURNS, vendingBlanks } from '../machine/vending';
 import type { Current } from './dirty';
+import type { Coin } from '../archive/types';
 
 /** The room wakes in groups (the first visit lights them one at a time): the clock, the computer, everything else. */
 export type WakeGroup = 'clock' | 'computer' | 'rest';
@@ -82,8 +83,8 @@ export class Room {
   private wakeTarget: Record<WakeGroup, number> = { clock: 1, computer: 1, rest: 1 };
   private wakeRate: Record<WakeGroup, number> = { clock: 2.2, computer: 2.2, rest: 1.3 };
   private spots: { light: THREE.SpotLight; base: number; group: WakeGroup }[] = [];
-  /** Until the coin exists the board says so (it only ever shows numbers that add up). */
-  boardRows = ['$OMD', 'NOT LAUNCHED', 'NUMBERS WHEN', 'IT IS LIVE'];
+  /** Until the coin exists the board says so (it only ever shows numbers that add up); then coinRows(). */
+  boardRows = coinRows({ mint: null, live: false });
 
   constructor() {
     this.scaled.scale.setScalar(MM);
@@ -469,4 +470,17 @@ function plinth(w: number, h: number, d: number, glass: GlassUniforms, t: Floppy
   g.add(top, body, edge);
   void glass; void t;
   return g;
+}
+
+/** Money for the flaps: at most four figures and a unit (1.24M, 12.4M, 340K). */
+const money = (n: number) => {
+  const [v, u] = n >= 1e9 ? [n / 1e9, 'B'] : n >= 1e6 ? [n / 1e6, 'M'] : n >= 1e3 ? [n / 1e3, 'K'] : [n, ''];
+  return `${v.toFixed(v < 10 && u ? 2 : v < 100 && u ? 1 : 0)}${u}`;
+};
+/** The board's rows for the coin: big $OMD, then market cap, a day's volume and change (14 flaps a row). */
+export function coinRows(c: Coin): string[] {
+  if (!c.mint) return ['$OMD', 'NOT LAUNCHED', 'NUMBERS WHEN', 'IT IS LIVE'];
+  if (c.mc === undefined) return ['$OMD', 'LIVE', 'ON PUMP.FUN', 'NO TRADES YET'];
+  return ['$OMD', `MC $${money(c.mc)}`, c.vol24 === undefined ? '' : `24H VOL $${money(c.vol24)}`,
+    c.change24 === undefined ? '' : `24H ${c.change24 >= 0 ? '+' : ''}${c.change24.toFixed(1)}%`];
 }

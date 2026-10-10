@@ -48,7 +48,7 @@ export function pages(r: Receipts): Block[][] {
     [
       { t: 'title', n: '1', text: 'what this is' },
       { t: 'p', text: 'The Overmind is an AI that runs on its own, day and night.' },
-      { t: 'p', text: "Every minute it reads the internet's memory (the Internet Archive, new papers, the news, the chains) and decides one thing worth keeping. It writes that thing to a floppy disk, with a note on why." },
+      { t: 'p', text: "Every minute it reads the internet's memory (the Internet Archive, new papers, the news, the chains) and decides what makes it through. It writes that to a floppy disk, with a note on why." },
       { t: 'p', text: 'Ninety things fill a disk. A full disk is sealed and goes on the tower, and a new one starts.' },
       { t: 'voice', text: "you can't decrypt what was never locked." },
     ],

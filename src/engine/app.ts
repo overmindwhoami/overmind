@@ -4,7 +4,7 @@ import { CAMERA, RENDERER } from '../../design-system/scene';
 import { Tower, type Instance } from './tower';
 import { Station, CLEAN_LAYER, COLOUR_LAYER } from './station';
 import { Dirty, DIRTY, type Current } from './dirty';
-import { Room, PLACES, type PlaceName } from './room';
+import { Room, PLACES, coinRows, type PlaceName } from './room';
 import { LABEL_FONTS } from './floppy/labels';
 import { Composer } from './composer';
 import { Lighting } from './lighting';
@@ -14,7 +14,7 @@ import { Tracker, type TrackerContent } from '../hud/tracker';
 import { clientOf, preload, sourceFor } from '../hud/source';
 import { Sound } from '../audio/sound';
 import { SimArchive, fmtDisk, fmtTime, type Archive } from '../archive/sim';
-import { sourceName } from '../archive/types';
+import { sourceName, type Coin } from '../archive/types';
 import { BLUR_EVENT, FOCUS_EVENT, READ_EVENT } from '../ui/indexNav';
 import { WriteLog } from '../ui/writeLog';
 import { Story, type Line } from '../ui/story';
@@ -36,7 +36,7 @@ const SEEN = 'overmind.seen';
  */
 type TourTarget = 'live' | 'label' | 'log' | 'stack' | 'clock' | 'reader';
 const TOUR: (TourStop & { where: 'tower' | 'stack' | 'room'; target: TourTarget; wake?: 'clock' | 'computer' })[] = [
-  { title: 'the live disk', line: 'this is me, writing. one thing a minute, onto this disk.', where: 'tower', target: 'live' },
+  { title: 'the live disk', line: 'this is me, writing. every minute i decide what makes it through.', where: 'tower', target: 'live' },
   { title: 'its label', line: "where it came from: the disk it forked from, and its fingerprint.", where: 'tower', target: 'label' },
   { title: 'the write log', line: 'every save lands here with my note on why i kept it. ninety, and the disk is full.', where: 'tower', target: 'log' },
   { title: 'the lineage', line: 'every disk under it is full and sealed. anyone can check nobody changed them. not even me.', where: 'room', target: 'stack' },
@@ -254,6 +254,7 @@ export class App {
     this.room.proxies.traverse((o) => o.layers.set(COLOUR_LAYER));
     this.room.wakeable('computer', this.station.pc.group);
     this.room.clean(this.place, CLEAN_LAYER);
+    void this.watchCoin();
     // a first visit (no link to a place, not seen lately) opens in the dark, on the live disk
     const deep = window.location.hash.length > 1 && window.location.hash !== '#debug';
     let seen = false;
@@ -615,13 +616,21 @@ export class App {
     if (this.pager.root) this.pager.root.hidden = this.place !== 'docs';
     if (this.pager.label) this.pager.label.textContent = tall ? `${this.docsPage + 1} / ${PAGE_COUNT}` : `${this.docsPage - (this.docsPage % 2) + 1}–${this.docsPage - (this.docsPage % 2) + 2} / ${PAGE_COUNT}`;
   }
+  /** $OMD on the board: the coin's numbers once it exists, asked every minute (the server shares one lookup). */
+  private coin?: Coin;
+  private async watchCoin() {
+    if (!this.archive.coin) return;
+    const c = await this.archive.coin();
+    if (c) { this.coin = c; this.room.boardRows = coinRows(c); }
+    window.setTimeout(() => void this.watchCoin(), 60_000);
+  }
   /** Prints the current spread on the manual; the receipts page is filled from the live archive. */
   private async printDocs() {
     const spread = Math.floor(this.docsPage / 2);
     const first = this.archive.disk(0);
     const r: Receipts = {
       genesis: first.startedAt || undefined, firstSeal: first.sealed ? first.sealedAt : undefined, sealed: this.archive.sealedCount(),
-      qday: this.archive.watch?.()?.qday?.estimate?.slice(0, 10), coin: (import.meta.env.VITE_OMD_MINT as string | undefined) || undefined,
+      qday: this.archive.watch?.()?.qday?.estimate?.slice(0, 10), coin: this.coin?.mint ?? ((import.meta.env.VITE_OMD_MINT as string | undefined) || undefined),
     };
     if (spread === 3 && this.archive.wallet) r.wallet = await this.archive.wallet();
     const large = this.camera.aspect < 1, key = spread * 2 + (large ? 1 : 0);

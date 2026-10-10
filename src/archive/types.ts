@@ -85,7 +85,12 @@ export interface Archive {
   verify?(n: number): Promise<Verification>;
   /** The sealing wallet (the live service only). */
   wallet?(): Promise<{ address: string; balance: number | null } | undefined>;
+  /** $OMD's numbers (the live service only); `mint` is null until the coin exists. */
+  coin?(): Promise<Coin | undefined>;
 }
+
+/** The coin, as the board shows it: market cap, a day's volume and change, in USD. */
+export interface Coin { mint: string | null; live: boolean; mc?: number; vol24?: number; change24?: number; price?: number; url?: string }
 
 /** What CHECK found: the record re-hashed here, against the fingerprint it was sealed with and the memo on Solana. */
 export interface Verification {
