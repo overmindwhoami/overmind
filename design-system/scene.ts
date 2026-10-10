@@ -21,7 +21,7 @@ export const CAMERA = {
   minHorizontalFov: 30,
   near: 0.1,
   far: 30,
-  distance: 2.3,
+  distance: 2.85, // pulled back a little: the room is round it now
   heightOffset: 0.12, // camera sits above the scroll height
   lookOffset: 0.02, // and looks slightly down
   lookX: -0.06,
@@ -83,7 +83,7 @@ export const MATERIALS = {
 
 export const POST = {
   motionBlur: { samples: 12, shutter: 1.6, capFraction: 0.035 },
-  depthOfField: { aperture: 0.007, focusBase: 1.68, maxRadiusPx: 8, spiralStep: 1.25, maxTaps: 160 },
+  depthOfField: { aperture: 0.007, focusBase: 2.23, maxRadiusPx: 8, spiralStep: 1.25, maxTaps: 160 },
   bloom: { threshold: 1.4, knee: 0.5, levels: 6, radius: 1, strength: 0.4, halationMix: 0.35 },
   final: {
     aberration: 0.006,

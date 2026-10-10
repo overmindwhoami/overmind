@@ -74,17 +74,39 @@ void main() {
 uniform float uAberration; uniform float uBloom; uniform float uContrast; uniform float uExposure;
 uniform float uGrain; uniform float uSaturation; uniform float uTime; uniform float uVignette;
 uniform sampler2D tMask; uniform float uMaskSaturation;
+uniform sampler2D tStrands; uniform float uDirty; uniform float uPixel; uniform vec3 uInk; uniform vec3 uAccent;
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+float bayer4(vec2 q) {
+  ivec2 i = ivec2(mod(q, 4.0));
+  float m[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+  return (m[i.x + i.y * 4] + 0.5) / 16.0;
+}
 void main() {
-  vec2 p = vUv - 0.5; float r = length(p); vec2 shift = p * r * uAberration;
-  vec3 c = vec3(texture(tFrame, vUv + shift).r, texture(tFrame, vUv).g, texture(tFrame, vUv - shift).b);
-  vec3 b = texture(tBloom, vUv).rgb;
+  // the DIRTYPXLS treatment (src/engine/dirty.ts): blocks of uPixel turn, in random order as uDirty rises, into
+  // 1-bit ordered dither with the strand marks over it; readable content (green in the mask) stays clean
+  vec2 block = floor(gl_FragCoord.xy / uPixel);
+  vec2 blockUv = (block + 0.5) * uPixel / uResolution;
+  bool dirty = uDirty > 0.0 && hash12(block * 1.37 + 11.0) < uDirty && texture(tMask, blockUv).g < 0.5;
+  vec2 uv = dirty ? blockUv : vUv;
+  vec2 p = uv - 0.5; float r = length(p); vec2 shift = p * r * uAberration;
+  vec3 c = vec3(texture(tFrame, uv + shift).r, texture(tFrame, uv).g, texture(tFrame, uv - shift).b);
+  vec3 b = texture(tBloom, uv).rgb;
   c += mix(b, uTint * luma(b), 0.35) * uBloom;
   c *= 1.0 - smoothstep(0.25, 0.85, r) * uVignette;
   c = srgb(aces(c * uExposure));
   // colour only where the mask says (the machine): everything else keeps the site's monochrome
-  c = mix(vec3(luma(c)), c, mix(uSaturation, uMaskSaturation, texture(tMask, vUv).r));
+  if (dirty) {
+    // tone like the reference: black dominates (about 90%), only the brightest parts keep ink
+    float l = pow(clamp((luma(c) - 0.16) / 0.62, 0.0, 1.0), 1.6);
+    ivec2 ts = textureSize(tStrands, 0), sb = ivec2(block);
+    vec4 mark = sb.x < ts.x && sb.y < ts.y ? texelFetch(tStrands, sb, 0) : vec4(0.0);
+    c = mix(vec3(0.0), uInk, max(step(bayer4(block), l), mark.r));
+    if (mark.g > 0.5) c = uAccent;
+    fragColor = vec4(c, 1.0);
+    return;
+  }
+  c = mix(vec3(luma(c)), c, mix(uSaturation, uMaskSaturation, texture(tMask, uv).r));
   c = (c - 0.5) * uContrast + 0.5;
   c += (hash12(floor(vUv * uResolution) + fract(uTime) * vec2(1931.0, 2713.0)) - 0.5) * uGrain;
   fragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
@@ -101,7 +123,7 @@ export interface PostSettings {
 type Uniforms = Record<string, THREE.IUniform>;
 export class Composer {
   readonly scene: THREE.WebGLRenderTarget;
-  /** Half-resolution coverage of objects allowed to keep colour (red channel), drawn by the app each frame. */
+  /** Half-resolution mask drawn by the app each frame: red = may keep colour (the machine), green = stays clean (readable screens). */
   readonly mask: THREE.WebGLRenderTarget;
   private motion: THREE.WebGLRenderTarget;
   private lens: THREE.WebGLRenderTarget;
@@ -137,7 +159,8 @@ export class Composer {
       prefilter: { tMap: f(this.lens.texture), uTexel: v2(), uThreshold: f(1) },
       down: { tMap: f(null), uTexel: v2() },
       up: { tCurrent: f(null), tSmaller: f(null), uTexel: v2(), uRadius: f(1) },
-      final: { tFrame: f(this.lens.texture), tBloom: f(this.up[0].texture), uResolution: v2(), uTint: f(new THREE.Color('#ffffff')), uAberration: f(), uBloom: f(), uContrast: f(1), uExposure: f(1), uGrain: f(), uSaturation: f(1), uTime: f(), uVignette: f(), tMask: f(this.mask.texture), uMaskSaturation: f(0) },
+      final: { tFrame: f(this.lens.texture), tBloom: f(this.up[0].texture), uResolution: v2(), uTint: f(new THREE.Color('#ffffff')), uAberration: f(), uBloom: f(), uContrast: f(1), uExposure: f(1), uGrain: f(), uSaturation: f(1), uTime: f(), uVignette: f(), tMask: f(this.mask.texture), uMaskSaturation: f(0),
+        tStrands: f(null), uDirty: f(0), uPixel: f(3), uInk: f(new THREE.Color('#d0d0d0')), uAccent: f(new THREE.Color('#ff0000')) },
     };
     this.u.motion.tMask.value = this.mask.texture;
     const make = (k: keyof typeof FRAG) => {
@@ -158,7 +181,8 @@ export class Composer {
     this.renderer.render(this.pass[k], this.camera);
   }
 
-  render(o: { dt: number; focus: number; frame: number; time: number; projectionInverse: THREE.Matrix4; reproject: THREE.Matrix4; reprojectStatic?: THREE.Matrix4; settings: PostSettings }) {
+  render(o: { dt: number; focus: number; frame: number; time: number; projectionInverse: THREE.Matrix4; reproject: THREE.Matrix4; reprojectStatic?: THREE.Matrix4; settings: PostSettings;
+    dirty?: { amount: number; pixel: number; strands: THREE.Texture; ink: THREE.Color; accent: THREE.Color } }) {
     const { x, y } = this.size, s = o.settings, u = this.u;
     u.motion.uAperture.value = s.aperture;
     u.motion.uFocus.value = o.focus;
@@ -196,6 +220,11 @@ export class Composer {
     fu.uAberration.value = s.aberration; fu.uBloom.value = s.bloom; fu.uContrast.value = s.contrast; fu.uExposure.value = s.exposure;
     fu.uGrain.value = s.grain; fu.uSaturation.value = s.saturation; fu.uTime.value = o.time; fu.uVignette.value = s.vignette;
     fu.uMaskSaturation.value = s.machineSaturation ?? s.saturation;
+    fu.uDirty.value = o.dirty?.amount ?? 0;
+    if (o.dirty) {
+      fu.tStrands.value = o.dirty.strands; fu.uPixel.value = o.dirty.pixel;
+      (fu.uInk.value as THREE.Color).copy(o.dirty.ink); (fu.uAccent.value as THREE.Color).copy(o.dirty.accent);
+    }
     (fu.uResolution.value as THREE.Vector2).set(x, y);
     this.draw('final', null);
   }

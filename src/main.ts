@@ -4,6 +4,41 @@ import { App } from './engine/app';
 import { SimArchive } from './archive/sim';
 import { RemoteArchive } from './archive/remote';
 
+const PLACE_NAMES = ['tower', 'docs', 'omd', 'terminal', 'launch', 'explorer', 'mint'] as const;
+type Place = (typeof PLACE_NAMES)[number] | 'room';
+/** The page opens on the whole room; a hash names a place (#tower, #omd, …). */
+const placeOf = (hash: string): Place => (PLACE_NAMES as readonly string[]).includes(hash.slice(1)) ? (hash.slice(1) as Place) : 'room';
+
+/** The menu: each item flies the camera to its place in the room; the back button, Esc and the logo return to the room. */
+function wirePlaces(app: App) {
+  const back = document.querySelector<HTMLButtonElement>('.back');
+  const items = document.querySelectorAll<HTMLAnchorElement>('[data-go]');
+  const mark = () => {
+    for (const a of items) a.setAttribute('aria-current', String(a.dataset.go === app.place));
+    if (back) back.hidden = app.place === 'room';
+  };
+  for (const el of document.querySelectorAll<HTMLElement>('[data-go]')) el.addEventListener('click', (e) => {
+    e.preventDefault();
+    app.go(el.dataset.go as Place);
+    mark();
+  });
+  document.querySelector('.logo')?.addEventListener('click', (e) => { e.preventDefault(); app.go('room'); mark(); }); // never a reload
+  window.addEventListener('placechange', mark);
+  window.addEventListener('wheel', () => queueMicrotask(mark), { passive: true });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') queueMicrotask(mark); });
+  window.addEventListener('hashchange', () => { app.go(placeOf(window.location.hash)); mark(); });
+  if (placeOf(window.location.hash) !== 'room') app.go(placeOf(window.location.hash));
+  mark();
+}
+
+/** The loader follows the app's stages. */
+const fill = document.querySelector<HTMLElement>('[data-loader-fill]'), stepEl = document.querySelector<HTMLElement>('[data-loader-step]'), loader = document.querySelector<HTMLElement>('[data-loader]');
+window.addEventListener('overmind:progress', ((e: CustomEvent<{ p: number; step: string }>) => {
+  fill?.style.setProperty('--p', String(e.detail.p));
+  if (stepEl) stepEl.textContent = e.detail.step;
+  loader?.setAttribute('aria-valuenow', String(Math.round(e.detail.p * 100)));
+}) as EventListener);
+
 function unsupported(error: unknown) {
   document.documentElement.classList.add('is-unsupported');
   console.error(error);
@@ -15,7 +50,7 @@ const archive = api ? new RemoteArchive(api) : new SimArchive();
 new IndexNav(document.querySelector('.logo'), archive);
 try {
   const app = new App(archive);
-  app.load().catch(unsupported);
+  app.load().then(() => wirePlaces(app)).catch(unsupported);
   if (window.location.hash === '#debug') void import('./debug').then((m) => m.mountDebug(app));
 } catch (error) {
   unsupported(error);

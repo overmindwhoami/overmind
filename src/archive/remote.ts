@@ -90,6 +90,8 @@ export class RemoteArchive implements Archive {
     this.watched = st.watch;
     this.offset = st.now - Date.now();
     this.nextAt = Date.now() + st.msToNext;
+    const known = st.disk ? this.disks.get(st.disk.n) : undefined;
+    if (st.disk && (st.disk.n < this.cur.disk || (known?.startedAt && Math.abs(known.startedAt - st.disk.startedAt) > 1000))) return this.restarted();
     if (st.disk) { this.putDisk(st.disk); this.cur = { disk: st.disk.n, written: st.disk.written }; }
     this.pending.clear();
     this.fetchedAt.clear();
@@ -104,6 +106,10 @@ export class RemoteArchive implements Archive {
     const es = new EventSource(`${this.base}/api/events`);
     es.addEventListener('slot', (e) => {
       const s = this.toSlot(JSON.parse((e as MessageEvent).data) as SlotJson);
+      if (s.disk < this.cur.disk) return this.restarted();
+      // the same slot again, written at a different time: the lineage was reset and is writing over its old numbers
+      const same = this.slots.get(s.disk)?.find((x) => x.index === s.index);
+      if (same && same.time && Math.abs(same.time - s.time) > 1000) return this.restarted();
       const list = this.slots.get(s.disk) ?? [];
       if (!list.some((x) => x.index === s.index)) list.push(s);
       this.slots.set(s.disk, list);
@@ -129,6 +135,9 @@ export class RemoteArchive implements Archive {
     });
     es.addEventListener('disk', (e) => {
       const d = JSON.parse((e as MessageEvent).data) as DiskJson;
+      // a disk that starts again (earlier number, or the same number with a new start time) means the lineage was reset
+      const known = this.disks.get(d.n);
+      if (d.n < this.cur.disk || (known && known.startedAt && Math.abs(known.startedAt - d.startedAt) > 1000)) return this.restarted();
       this.putDisk(d);
       if (!this.slots.has(d.n)) this.slots.set(d.n, []);
       if (d.n > this.cur.disk) this.cur = { disk: d.n, written: d.written };
@@ -137,6 +146,14 @@ export class RemoteArchive implements Archive {
     es.onerror = () => { this.stale = true; };
     es.onopen = () => { if (this.stale) { this.stale = false; void this.sync(); } };
   }
+
+  /** The lineage went backwards: it was reset (at launch). Everything on the page belongs to the old one, so start over. */
+  private restarted() {
+    if (this.reloading) return;
+    this.reloading = true;
+    window.location.reload();
+  }
+  private reloading = false;
 
   private putDisk(x: DiskJson) {
     const prev = this.disks.get(x.n);

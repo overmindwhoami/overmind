@@ -36,7 +36,7 @@ function ribbonTexture() {
   return t;
 }
 
-function materials(t: FloppyTextures, gu: GlassUniforms, variant: PcVariant, screen: THREE.Texture) {
+export function machineMaterials(t: FloppyTextures, gu: GlassUniforms, variant: PcVariant, screen: THREE.Texture) {
   const stipple = (tile: number) => { const s = t.stipple.clone(); s.repeat.setScalar(1 / tile); s.needsUpdate = true; return s; };
   const abs = (c: THREE.Color, rough: number, tile = 34, k = 0.4, direct = 0.5) =>
     lightScale(new THREE.MeshStandardMaterial({ color: c, roughness: rough, normalMap: stipple(tile), normalScale: new THREE.Vector2(k, k) }), { direct });
@@ -280,7 +280,7 @@ export function buildPC(t: FloppyTextures, gu: GlassUniforms, variant: PcVariant
   systemUnit(P, clear);
   const mon = withMonitor ? monitor(P, clear, screen) : undefined;
   if (withKeyboard) keyboard(P, clear);
-  const m = materials(t, gu, variant, screen);
+  const m = machineMaterials(t, gu, variant, screen);
   const group = P.build(m);
   if (mon) { mon.tube.material = m.screen; group.add(mon.tube); }
   const badge = new THREE.Mesh(new THREE.PlaneGeometry(40, 8.5), new THREE.MeshStandardMaterial({ map: badgeTexture(), metalness: 1, roughness: 0.35, color: 0xd0d0d0 }));

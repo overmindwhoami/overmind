@@ -85,7 +85,13 @@ async function build(item: Item): Promise<{ media?: string; clip?: string }> {
     if (!item.image) return {};
     const safe = item.id.replace(/[^\w.-]/g, '_').slice(0, 120);
     const anchor = item.kind === 'newspaper' ? 0.12 : item.kind === 'book' ? 0.02 : 0.5;
-    await put(`${safe}.jpg`, await still(await fetchBytes(item.image, 12_000_000), anchor), 'image/jpeg');
+    // GitHub's social cards are rate-limited; the owner's avatar stands in when they refuse
+    const owner = item.source === 'github' ? item.url.match(/github\.com\/([^/]+)/)?.[1] : undefined;
+    const bytes = await fetchBytes(item.image, 12_000_000).catch(async (e) => {
+      if (owner) return fetchBytes(`https://avatars.githubusercontent.com/${owner}?s=640`);
+      throw e;
+    });
+    await put(`${safe}.jpg`, await still(bytes, anchor), 'image/jpeg');
     return { media: `/media/${safe}.jpg` };
   }
   const safe = item.id.replace(/[^\w.-]/g, '_');

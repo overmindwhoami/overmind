@@ -16,6 +16,8 @@ import { sourceFor, isPlaying } from '../hud/source';
 
 /** Objects on this layer keep (mild) colour through the post chain. */
 export const COLOUR_LAYER = 1;
+/** Readable surfaces (the screen): the DIRTYPXLS treatment leaves them clean. */
+export const CLEAN_LAYER = 2;
 type Phase = 'idle' | 'fly' | 'insert' | 'read' | 'eject' | 'return';
 const FLY = 1.35, INSERT = 0.7, EJECT = 0.5, RETURN = 1.15;
 const ease = (t: number) => t * t * (3 - 2 * t);
@@ -53,16 +55,16 @@ export class Station {
       proxy.add(m);
     }
     scaled.add(proxy);
+    this.pc.screenMesh?.layers.enable(CLEAN_LAYER);
   }
 
   get reading() { return this.phase !== 'idle'; }
   get open() { return this.phase === 'read'; }
 
-  /** Background pose: behind the tower and to the right, facing the viewer, following the camera height. */
-  place(height: number, aspect: number) {
-    const portrait = aspect < 1;
-    this.root.position.set(portrait ? 0.7 : 3.3 * Math.min(1, aspect / 1.5), height + (portrait ? -3.1 : -2.45), portrait ? -11 : -9.4);
-    this.root.rotation.set(0, portrait ? -0.1 : -0.38, 0);
+  /** Stands the computer at a place in the room (its feet at the anchor's origin, turned with it). */
+  placeAt(anchor: THREE.Object3D) {
+    anchor.getWorldPosition(this.root.position);
+    anchor.getWorldQuaternion(this.root.quaternion);
     this.root.updateMatrixWorld(true);
   }
 

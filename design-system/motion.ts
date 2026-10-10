@@ -73,7 +73,7 @@ export const DRIFT = {
   heightAmp: 0.18, heightFreq: 0.13, // 48.3 s
   xAmp: 0.12, xFreq: 0.09, // 69.8 s
   zAmp: 0.1, zFreq: 0.07, // 89.8 s
-  focusBase: 1.68, focusAmp: 0.12, focusFreq: 0.21, // 29.9 s
+  focusBase: 2.23, focusAmp: 0.12, focusFreq: 0.21, // 29.9 s
 } as const;
 
 export const PARALLAX = {
@@ -112,15 +112,19 @@ export const HUD = {
   fillRefresh: [1200, 3600],
   proximityPx: 120,
   /** Measurement boxes are drawn at this share of the feature they measure (box 0, the case outline, stays 1). Reference: 1. */
-  boxScale: 0.8,
+  boxScale: 0.72,
+  /** The instrument, pared back now that the room is the show (reference: all 20 regions, 4–9 rings). */
+  boxes: 8,
+  labels: 3, // coordinate readouts on the first few boxes only
+  rings: [1, 3],
   /** Growth of a box near the cursor (reference 0.18). */
   proximityGrow: 0.06,
   /** Below this viewport width the instrument is compact: smaller and fewer boxes, fewer rings, two-line subline. */
   compactBelowPx: 768,
   compactBoxScale: 0.68,
-  compactBoxes: 12,
-  compactLabels: 4, // coordinate readouts only on the first few boxes
-  compactRings: [3, 6],
+  compactBoxes: 5,
+  compactLabels: 2, // coordinate readouts only on the first few boxes
+  compactRings: [1, 2],
   trackingPx: 240,
   travelBoostPer500PxPerSec: 1,
   travelBoostMax: 3,

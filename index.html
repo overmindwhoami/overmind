@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport" />
+    <meta content="yes" name="mobile-web-app-capable" />
+    <meta content="yes" name="apple-mobile-web-app-capable" />
+    <meta content="black-translucent" name="apple-mobile-web-app-status-bar-style" />
+    <meta content="Overmind" name="apple-mobile-web-app-title" />
     <meta content="dark" name="color-scheme" />
     <meta content="#000000" name="theme-color" />
     <meta content="Overmind is a mind that copies itself onto the chain and is running out of time. Every minute it saves one thing worth keeping before Q-Day onto a floppy disk, where anyone can watch." name="description" />
@@ -16,11 +20,27 @@
   <body>
     <h1 class="title">Overmind</h1>
     <img alt="" aria-hidden="true" class="poster" decoding="async" src="/poster.webp" />
+    <div class="loader" data-loader role="progressbar" aria-label="Loading the room" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <p class="loader__mark">OVERMIND</p>
+      <div class="loader__bar"><span data-loader-fill></span></div>
+      <p class="loader__step" data-loader-step>Waking the archivist</p>
+    </div>
+    <div class="tags" data-room-tags></div>
     <div class="chrome">
       <a class="logo" href="/" aria-label="Overmind home">OVERMIND</a>
-      <a class="contact link" href="mailto:hello@overmind.example">hello@overmind.example</a>
+      <nav class="menu" id="menu" aria-label="Places in the room">
+        <a class="menu__item menu__item--room link" data-go="room" href="#">room</a>
+        <a class="menu__item link" data-go="docs" href="#docs">docs</a>
+        <a class="menu__item link" data-go="omd" href="#omd">$OMD</a>
+        <a class="menu__item link" data-go="terminal" href="#terminal">terminal</a>
+        <a class="menu__item link" data-go="launch" href="#launch">launch</a>
+        <a class="menu__item link" data-go="explorer" href="#explorer">explorer</a>
+        <a class="menu__item link" data-go="mint" href="#mint">mint <span class="menu__soon">soon</span></a>
+      </nav>
+      <button class="back" data-go="room" type="button" hidden>Back to the room <span aria-hidden="true">(esc)</span></button>
+      <p class="room-label" data-room-label aria-hidden="true" hidden></p>
       <p class="copy">
-        Overmind saves one thing a minute onto a floppy disk, before Q-Day.<br /><span class="on-hover">Hover a disk to look inside, click to read it,</span><span class="on-touch">Tap a disk to look inside, tap again to read it,</span> scroll down the lineage.
+        Overmind saves one thing a minute onto a floppy disk, before Q-Day.<br /><span class="on-room"><span class="on-hover">Click the tower to see the lineage, or anything in the room.</span><span class="on-touch">Tap the tower or a name to go there. Drag to look around.</span></span><span class="on-tower"><span class="on-hover">Hover a disk to look inside, click to read it,</span><span class="on-touch">Tap a disk to look inside, tap again to read it,</span> scroll down the lineage.</span>
       </p>
       <section class="log" data-log aria-label="What the Overmind is writing now">
         <div class="log__watch" data-watch hidden>

@@ -62,6 +62,7 @@ export async function refreshWatch() {
 export async function moveQday(days: number, reason: string) {
   const d = Math.max(-30, Math.min(30, Math.round(days)));
   if (!d) return 0;
+  await qday(QDAY_START); // after a lineage reset the clock starts over: make sure it exists before moving it
   watch.qday = qdayJson(await shiftQday(d, reason.slice(0, 120)));
   watchEvents.emit('watch', watch);
   return d;

@@ -102,7 +102,7 @@ export class Tracker {
     const reduced = this.opts.reduced?.() ?? false;
     const compact = window.innerWidth < HUD.compactBelowPx; // phones and narrow windows: a smaller, sparser instrument
     const boxScale = compact ? HUD.compactBoxScale : HUD.boxScale;
-    const [ringsMin, ringsMax] = compact ? HUD.compactRings : [4, 9];
+    const [ringsMin, ringsMax] = compact ? HUD.compactRings : HUD.rings;
     const weights = { image: rand(0.2, 1), ascii: rand(0.1, 1), pixels: rand(0.1, 1), none: rand(0, 0.35) };
     const cornerShare = rand(0.15, 0.55);
     this.target = {
@@ -112,9 +112,9 @@ export class Tracker {
       connection: pick([[1, 3], [1, 3], [4, 4], [], undefined]),
       shell: { x: rand(68, 90), y: rand(70, 92), z: rand(26, 44) },
       time: this.time,
-      boxes: REGIONS.slice(0, compact ? HUD.compactBoxes : REGIONS.length).map((r, i) => ({
+      boxes: REGIONS.slice(0, compact ? HUD.compactBoxes : HUD.boxes).map((r, i) => ({
         ...r,
-        labeled: compact ? r.labeled && i < HUD.compactLabels : r.labeled, // fewer readouts so they don't pile up
+        labeled: r.labeled && i < (compact ? HUD.compactLabels : HUD.labels), // few readouts so they don't pile up
         w: i === 0 ? r.w : r.w * boxScale,
         h: i === 0 ? r.h : r.h * boxScale,
         delay: i === 0 || reduced ? 0 : rand(0, HUD.boxDelayMax / 1000),

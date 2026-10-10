@@ -14,6 +14,14 @@ import { rng } from './engine/floppy/textures';
 import { LABEL_FONTS } from './engine/floppy/labels';
 import { MM } from './engine/floppy/kit';
 import { buildMachine, type Concept } from './machine/concepts';
+import { Board, BOARD } from './machine/board';
+import { QClock, CLOCK } from './machine/clock';
+import { buildDesk, DESK } from './machine/desk';
+import { Manual, MANUAL } from './machine/manual';
+import { Duplicator } from './machine/duplicator';
+import { buildWall, slot as wallSlot, SLOTS as WALL_SLOTS, WALL } from './machine/wall';
+import { Vending, VEND } from './machine/vending';
+import type { FloppyTextures, GlassUniforms } from './engine/floppy/materials';
 
 const q = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (q.has(k) ? Number(q.get(k)) : d);
@@ -52,7 +60,7 @@ if (view === 'row') {
 } else if (view === 'machine' || view === 'lineup') {
   // disk poses are set once the machines exist (main)
   machineConcepts().forEach((_, i) => placed.push({ rec: record(i, { label: [0, 1, 3][i], shell: [2, 0, 3][i], ...shared, open: 1 }), m: new THREE.Matrix4() }));
-} else {
+} else if (view !== 'object') {
   placed.push({ rec: record(0, { label: 0, ...shared }), m: pose(0, 0, 0, num('rx', -10) * deg, (num('ry', 14) + (q.get('side') === '0' ? 180 : 0)) * deg, num('rz', 0) * deg) });
 }
 
@@ -66,12 +74,57 @@ const lighting = new Lighting(renderer, scene);
 const composer = new Composer(renderer);
 const glassUniforms = { uEdgeColor: { value: new THREE.Color('#ffffff') }, uEdgeGlow: { value: settings.edgeGlow }, uGlassOpacity: { value: settings.glassOpacity } };
 
+/** The room's objects for lookdev: the model, its centre (mm) and a size to frame it by. */
+function roomObject(name: string, t: FloppyTextures, gu: GlassUniforms): { group: THREE.Group; centre: THREE.Vector3; size: number; api: unknown; disks?: THREE.Matrix4[] } {
+  if (name === 'clock') {
+    const c = new QClock(t, gu);
+    c.show(num('days', 1826) * 86_400_000 + (13 * 3600 + 7 * 60 + 42) * 1000);
+    return { group: c.group, centre: new THREE.Vector3(0, CLOCK.h / 2, CLOCK.off + CLOCK.d / 2), size: CLOCK.w, api: c };
+  }
+  if (name === 'desk') return { group: buildDesk(t, gu), centre: new THREE.Vector3(0, DESK.h / 2, 0), size: DESK.w, api: null };
+  if (name === 'manual') { const m = new Manual(t, gu); return { group: m.group, centre: new THREE.Vector3(0, 10, 0), size: MANUAL.pageW * 2.3, api: m }; }
+  if (name === 'wall') {
+    const empty = new Set([2, 6, 10, 16, 21, 30, 35, 44, 52, 57, 63, 71, 77, 82, 89]);
+    const disks = Array.from({ length: WALL_SLOTS }, (_, i) => i).filter((i) => !empty.has(i)).map(wallSlot);
+    return { group: buildWall(t, gu), centre: new THREE.Vector3(0, WALL.base + (WALL.rows * WALL.pitchY) / 2, WALL.off + WALL.depth / 2), size: 1500, api: null, disks };
+  }
+  if (name === 'vending') { const m = new Vending(t, gu); return { group: m.group, centre: new THREE.Vector3(0, VEND.h / 2, 0), size: 1900, api: m }; }
+  if (name === 'duplicator') { const m = new Duplicator(t, gu); return { group: m.group, centre: new THREE.Vector3(0, 310, 30), size: 700, api: m }; }
+  const b = new Board(t, gu);
+  (q.get('rows') ?? '$OMD|0.000421|12 841|+3.2%').split('|').forEach((s, i) => b.set(i, s, 'centre', true));
+  if (q.has('to')) { q.get('to')!.split('|').forEach((s, i) => b.set(i, s)); for (let k = 0, n = num('flip', 0.3) * 60; k < n; k++) b.update(1 / 60); }
+  return { group: b.group, centre: new THREE.Vector3(0, BOARD.h / 2, BOARD.off + BOARD.d / 2), size: BOARD.w, api: b };
+}
+
 async function main() {
   await document.fonts.ready;
   await Promise.all(LABEL_FONTS.map((f) => document.fonts.load(f)));
   const kit = createKit(glassUniforms, { lite: q.get('quality') === 'low' });
-  const cellOf = new Map(placed.map((p) => [p.rec.index, kit.atlas.cell(p.rec.index, p.rec)]));
   let frameTarget: THREE.Vector3 | undefined, frameDistance = 0;
+  if (view === 'object') {
+    // a room object, centred on the origin: object=board|clock|…; for the board, rows=a|b|c|d and to=…&flip=s
+    const name = q.get('object') ?? 'board';
+    const built = roomObject(name, kit.textures, glassUniforms);
+    const root = new THREE.Group(), inner = new THREE.Group();
+    inner.add(built.group);
+    inner.position.copy(built.centre).negate();
+    root.add(inner);
+    root.scale.setScalar(MM);
+    root.rotation.y = num('ry', -24) * deg;
+    scene.add(root);
+    frameTarget = new THREE.Vector3();
+    frameDistance = built.size * MM * 1.55;
+    // disks that live in the object (the wall's cubbies): kit disks, posed in world units
+    root.updateMatrixWorld(true);
+    const rootNoScale = new THREE.Matrix4().compose(root.position, root.quaternion, new THREE.Vector3(1, 1, 1));
+    built.disks?.forEach((local, i) => {
+      const p = new THREE.Vector3(), qd = new THREE.Quaternion(), sc = new THREE.Vector3();
+      local.clone().premultiply(new THREE.Matrix4().makeTranslation(-built.centre.x, -built.centre.y, -built.centre.z)).decompose(p, qd, sc);
+      placed.push({ rec: record(i, { shell: [2, 2, 0, 2, 3, 2, 1, 4][(i * 7) % 8], label: i % 5, open: 0 }), m: rootNoScale.clone().multiply(new THREE.Matrix4().compose(p.multiplyScalar(MM), qd, new THREE.Vector3(1, 1, 1))) });
+    });
+    Object.assign(window, { object: built.api });
+  }
+  const cellOf = new Map(placed.map((p) => [p.rec.index, kit.atlas.cell(p.rec.index, p.rec)]));
   machineConcepts().forEach((c, i, all) => {
     const parts = (q.get('parts') ?? 'all').split(',');
     const mc = buildMachine(c, kit.textures, glassUniforms, { monitor: parts.includes('all') || parts.includes('monitor'), keyboard: parts.includes('all') || parts.includes('keyboard') });
