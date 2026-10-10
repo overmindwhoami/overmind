@@ -171,10 +171,10 @@ export class App {
       this.tickerUntil = now + 5200;
       const disk = a.disk === undefined ? '' : `disk ${String(a.disk + 1).padStart(4, '0')}`;
       const line = a.kind === 'open' ? `someone opened ${disk}` : a.kind === 'share' ? `someone shared ${disk}`
-        : a.kind === 'check' ? `someone checked ${disk}${a.match ? ': it matched' : ''}` : 'someone is talking to the overmind';
+        : a.kind === 'check' ? `someone checked ${disk}${a.match ? ': it matched' : ''}` : a.kind === 'docs' ? 'someone is reading the docs' : 'someone is talking to the overmind';
       const go = document.createElement('button');
       go.type = 'button'; go.className = 'here__go'; go.textContent = line;
-      go.addEventListener('click', () => { if (a.disk !== undefined) this.read(a.disk); else this.go('terminal'); });
+      go.addEventListener('click', () => { if (a.disk !== undefined) this.read(a.disk); else this.go(a.kind === 'docs' ? 'docs' : 'terminal'); });
       this.showHere(line, go);
       return;
     }
@@ -701,7 +701,7 @@ export class App {
     this.place = name;
     this.flightT = 0;
     this.room.clean(name, CLEAN_LAYER);
-    if (name === 'docs') { this.room.docsPage = this.docsPage; void this.printDocs(); }
+    if (name === 'docs') { this.room.docsPage = this.docsPage; void this.printDocs(); this.archive.report?.('docs'); }
     // the terminal: the screen switches to the conversation and the input opens (focused now, inside the click, so a
     // phone's keyboard comes up)
     this.station.terminal = name === 'terminal' ? this.terminal : undefined;

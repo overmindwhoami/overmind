@@ -87,8 +87,8 @@ export interface Archive {
   presence?(): number | undefined;
   /** What other visitors did since the last call (the live service only); the page's own actions are left out. */
   activity?(): Activity[];
-  /** Tells the room this visitor opened or shared a disk (the live service only). */
-  report?(kind: 'open' | 'share', disk: number): void;
+  /** Tells the room this visitor opened or shared a disk, or is reading the docs (the live service only). */
+  report?(kind: 'open' | 'share' | 'docs', disk?: number): void;
   /** Re-checks a sealed disk from the outside (the live service only): re-hash its record, compare with the seal. */
   verify?(n: number): Promise<Verification>;
   /** The sealing wallet (the live service only). */
@@ -110,5 +110,5 @@ export interface Verification {
   chain: { state: 'match' | 'mismatch' | 'pending' | 'none' | 'unreachable'; tx?: string; url?: string };
 }
 
-/** Something another visitor did: opened, checked or shared a disk, or is talking to the Overmind. */
-export interface Activity { kind: 'open' | 'check' | 'share' | 'talk'; disk?: number; match?: boolean; checks?: number; at: number }
+/** Something another visitor did: opened, checked or shared a disk, is talking to the Overmind or reading the docs. */
+export interface Activity { kind: 'open' | 'check' | 'share' | 'talk' | 'docs'; disk?: number; match?: boolean; checks?: number; at: number }

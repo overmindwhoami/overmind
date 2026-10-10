@@ -55,8 +55,9 @@ export class RemoteArchive implements Archive {
   private others: Activity[] = [];
   private you?: string;
   activity() { const a = this.others; this.others = []; return a; }
-  report(kind: 'open' | 'share', disk: number) {
-    void fetch(`${this.base}/api/activity`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, disk, v: visitor() }), keepalive: true }).catch(() => {});
+  report(kind: 'open' | 'share' | 'docs', disk?: number) {
+    // a simple request (text/plain, no preflight): it goes out in one trip, and could be keepalive if it ever needs to be
+    void fetch(`${this.base}/api/activity`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ kind, disk, v: visitor() }) }).catch(() => {});
   }
 
   disk(n: number): Disk {

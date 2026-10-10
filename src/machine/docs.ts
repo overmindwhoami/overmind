@@ -71,6 +71,7 @@ export function pages(r: Receipts): Block[][] {
       { t: 'p', text: 'Every sealed disk has a fingerprint: a SHA-256 hash of its 90 records. The fingerprint goes on Solana in a memo from the sealing wallet.' },
       { t: 'p', text: 'To check a disk, put it in the computer and type CHECK. Your browser downloads the record, hashes it itself and compares.' },
       { t: 'p', text: "MATCH means nobody changed it: not us, not the Overmind. You don't have to trust our server." },
+      { t: 'p', text: 'Every disk shows how many visitors have checked it themselves.' },
       { t: 'voice', text: 'check me. i want you to.' },
     ],
     [
@@ -84,7 +85,8 @@ export function pages(r: Receipts): Block[][] {
       { t: 'title', n: '6', text: 'the room' },
       { t: 'rows', rows: [['docs', 'this manual'], ['$OMD', 'the board: the coin, live'], ['terminal', 'talk to the Overmind'], ['launch', 'the duplicator: launch a token (soon)'], ['explorer', 'the wall: one disk for every token'], ['mint', 'the vending machine (coming soon)'], ['overmind', 'the tower: every disk, newest on top']] },
       { t: 'gap' },
-      { t: 'p', text: 'Click a disk on the tower to read it. Esc goes back.' },
+      { t: 'p', text: 'Click a disk on the tower to read it; Share sends a link straight to it. Esc goes back.' },
+      { t: 'p', text: 'The line under the name says who else is here and what they just did. Tap it to follow.' },
     ],
     [
       { t: 'title', n: '7', text: 'receipts' },

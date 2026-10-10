@@ -5,7 +5,7 @@
  *   GET /api/disks?from=&to=    disks in a range (at most 200)
  *   GET /api/disks/:n           one disk with its slots
  *   GET /api/events?v=          server-sent events: slot, media, seal, disk, presence (v: the visitor's id, for the count)
- *   POST /api/activity          {kind: open|share, disk, v}: what a visitor did, told to the room (no free text)
+ *   POST /api/activity          {kind: open|share, disk, v} or {kind: docs, v}: what a visitor did, told to the room (no free text)
  *   GET /api/coin               $OMD's numbers for the board (DexScreener, cached a minute; none until OMD_MINT is set)
  *   GET /media/:key             the instrument's stills and loops (CORS, immutable)
  * ROUND_EVERY_MS overrides the minute (local testing only).
@@ -77,9 +77,13 @@ const server = createServer(async (req, res) => {
       for await (const chunk of req) { raw += chunk; if (raw.length > 500) return send(res, 413, { error: 'too long' }); }
       let body: { kind?: string; disk?: number; v?: string } = {};
       try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'bad json' }); }
-      const d = await currentDisk();
-      if ((body.kind !== 'open' && body.kind !== 'share') || !Number.isInteger(body.disk) || body.disk! < 0 || !d || body.disk! > d.n) return send(res, 400, { error: 'no' });
-      tell({ kind: body.kind, disk: body.disk, by: tagOf(visitorOf(body.v, ip)) }, ip);
+      const by = tagOf(visitorOf(body.v, ip));
+      if (body.kind === 'docs') tell({ kind: 'docs', by }, ip);
+      else {
+        const d = await currentDisk();
+        if ((body.kind !== 'open' && body.kind !== 'share') || !Number.isInteger(body.disk) || body.disk! < 0 || !d || body.disk! > d.n) return send(res, 400, { error: 'no' });
+        tell({ kind: body.kind, disk: body.disk, by }, ip);
+      }
       res.writeHead(204, { 'access-control-allow-origin': '*' }); return res.end();
     }
     if (req.method !== 'GET') return send(res, 405, { error: 'read only' });

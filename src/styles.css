@@ -163,7 +163,11 @@ html[data-place='room'] .copy, html[data-place='tower'] .copy, html[data-intro] 
 .pager__btn { white-space: nowrap; padding: 6px 2px; border: 0; background: none; color: var(--color-text-primary); font: inherit; letter-spacing: 0.02em; cursor: pointer; }
 .pager__btn:focus-visible { outline: 1px solid; outline-offset: 4px; }
 .pager__label { white-space: nowrap; min-width: 64px; text-align: center; font-family: var(--font-mono); color: var(--color-text-secondary); }
-@media (max-width: 640px) { .pager { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); } }
+@media (max-width: 640px) {
+  /* like the menu: just the words, no pill */
+  .pager { bottom: calc(66px + env(safe-area-inset-bottom, 0px)); border: 0; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: 0 0 10px #000, 0 0 3px #000; }
+  .pager__btn { padding: 10px 6px; }
+}
 
 /* The walkthrough (src/ui/walkthrough.ts): the instrument's frame on one part, the rest dimmed, the Overmind's line */
 .tour { position: fixed; inset: 0; z-index: 4; display: none; pointer-events: none; }
@@ -260,6 +264,7 @@ html[data-place='room'] .log__note, html[data-place='room'] .log__meta { display
     background: linear-gradient(rgb(0 0 0 / 0%), rgb(0 0 0 / 38%) 45%, rgb(0 0 0 / 72%)); opacity: 0; transition: opacity var(--dur-ui);
   }
   html[data-place='tower']:not(.is-reading) .chrome::before, html[data-place='room'] .chrome::before { opacity: 1; }
+  html[data-place='docs'] .chrome::before { opacity: 1; height: 22vh; }
   html[data-place='room'] .log__list { display: none; }
 }
 .copy { grid-area: 3 / 1; align-self: end; max-width: 560px; margin: 0; font-size: var(--text-lead); line-height: var(--leading-lead); letter-spacing: var(--tracking-ui); text-wrap: balance; }

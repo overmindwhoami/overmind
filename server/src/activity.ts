@@ -1,13 +1,13 @@
 /**
  * What visitors are doing, told to everyone in the room: someone opened a disk, checked one, shared one, is talking to
- * the Overmind. Only the kind and a disk number ever go out (nothing a visitor typed, nothing that names them); each
+ * the Overmind, is reading the docs. Only the kind and a disk number ever go out (nothing a visitor typed, nothing that names them); each
  * event carries a tag only the sender's own page recognises, so it can leave its own actions out. Repeats from one
  * visitor and floods from one address are dropped.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
-export type Kind = 'open' | 'check' | 'share' | 'talk';
+export type Kind = 'open' | 'check' | 'share' | 'talk' | 'docs';
 export interface Activity { kind: Kind; disk?: number; match?: boolean; checks?: number; by: string; at: number }
 
 export const activityEvents = new EventEmitter();
@@ -21,7 +21,7 @@ export const visitorOf = (v: string | null | undefined, ip: string) => (v && /^[
 const recent: Activity[] = [];
 const repeats = new Map<string, number>(); // `${by}:${kind}:${disk}` → last time told
 const perIp = new Map<string, number[]>(); // address → times told, the last minute
-let talkAt = 0;
+const quietAt = new Map<Kind, number>(); // the kinds without a disk: one line at a time is plenty
 
 /** Tells the room, unless it's a repeat (the same visitor, kind and disk within a minute) or a flood. */
 export function tell(a: Omit<Activity, 'at'>, ip: string): boolean {
@@ -30,8 +30,8 @@ export function tell(a: Omit<Activity, 'at'>, ip: string): boolean {
   if (now - (repeats.get(key) ?? 0) < 60_000) return false;
   const times = (perIp.get(ip) ?? []).filter((t) => now - t < 60_000);
   if (times.length >= 8) return false;
-  if (a.kind === 'talk' && now - talkAt < 20_000) return false; // one "talking" line at a time is plenty
-  if (a.kind === 'talk') talkAt = now;
+  if (a.disk === undefined && now - (quietAt.get(a.kind) ?? 0) < 20_000) return false;
+  if (a.disk === undefined) quietAt.set(a.kind, now);
   repeats.set(key, now);
   times.push(now); perIp.set(ip, times);
   if (repeats.size > 20_000) for (const [k, t] of repeats) if (now - t > 60_000) repeats.delete(k);
