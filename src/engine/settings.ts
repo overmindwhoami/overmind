@@ -2,9 +2,11 @@ import { ENVIRONMENT, GLASS, LIGHTS, POST, RENDERER } from '../../design-system/
 import { SPIN } from '../../design-system/motion';
 
 const params = new URLSearchParams(window.location.search);
-/** Phones (touch-first, small screen) get the lite profile automatically; ?quality=low|high overrides. */
+/** Phones (touch-first, small screen) get the full kit and a higher resolution ceiling; ?quality=low is the lite profile for weak devices. */
 export const PHONE = window.matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
-export const QUALITY: 'low' | 'high' = params.get('quality') === 'low' || (PHONE && params.get('quality') !== 'high') ? 'low' : 'high';
+export const QUALITY: 'low' | 'high' = params.get('quality') === 'low' ? 'low' : 'high';
+/** A phone's resolution ceiling: 2.5× (a 3× screen reads soft at 2×; the adaptive steps climb there when frames allow). */
+export const PHONE_MAX_RATIO = 2.5;
 export const VERIFY = params.has('verify');
 /** Parity tests drive the camera freely, without the lineage's soft stops. */
 export const FREE = params.has('free');
@@ -13,8 +15,8 @@ export const FREE = params.has('free');
 export const settings = {
   adaptiveResolution: !VERIFY,
   frameRate: RENDERER.pixelRatio.targetFps,
-  // phones render at up to 2× (a 1× canvas on a 3× screen reads as blurry); elsewhere the lite cap applies
-  pixelRatio: Math.min(window.devicePixelRatio || 1, PHONE ? 2 : QUALITY === 'low' ? RENDERER.pixelRatio.liteCap : RENDERER.pixelRatio.maxCap),
+  // phones render at up to 2.5× (a 2× canvas on a 3× screen reads soft); elsewhere the cap, lower on the lite profile
+  pixelRatio: Math.min(window.devicePixelRatio || 1, PHONE ? PHONE_MAX_RATIO : QUALITY === 'low' ? RENDERER.pixelRatio.liteCap : RENDERER.pixelRatio.maxCap),
   spin: SPIN.idle,
   parallax: 1,
   volume: 0.8,

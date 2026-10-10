@@ -218,9 +218,9 @@ export class App {
 
   constructor(archive: Archive = new SimArchive()) {
     this.archive = archive;
-    // phones start sharp and never drop below 1.5× (the adaptive steps only trade between 1.5× and 2× there)
+    // phones start sharp (2×), climb toward 2.5× while frames keep up, and never drop below 1.5×
     this.resolution = PHONE
-      ? new Resolution(settings.pixelRatio, Math.min(1.5, settings.pixelRatio), settings.pixelRatio)
+      ? new Resolution(settings.pixelRatio, Math.min(1.5, settings.pixelRatio), Math.min(2, settings.pixelRatio))
       : new Resolution(settings.pixelRatio, RENDERER.pixelRatio.min, RENDERER.pixelRatio.start);
     this.renderer = new THREE.WebGLRenderer({ antialias: RENDERER.antialias, powerPreference: RENDERER.powerPreference, stencil: RENDERER.stencil });
     this.renderer.setPixelRatio(this.pixelRatio());
