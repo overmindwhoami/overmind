@@ -83,6 +83,8 @@ export interface Archive {
   watch?(): Watch | undefined;
   /** Re-checks a sealed disk from the outside (the live service only): re-hash its record, compare with the seal. */
   verify?(n: number): Promise<Verification>;
+  /** The sealing wallet (the live service only). */
+  wallet?(): Promise<{ address: string; balance: number | null } | undefined>;
 }
 
 /** What CHECK found: the record re-hashed here, against the fingerprint it was sealed with and the memo on Solana. */

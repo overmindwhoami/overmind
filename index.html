@@ -41,6 +41,11 @@
       </nav>
       <button class="back" data-go="room" type="button" hidden>Back to the room <span aria-hidden="true">(esc)</span></button>
       <p class="room-label" data-room-label aria-hidden="true" hidden></p>
+      <div class="pager" data-pager hidden>
+        <button class="pager__btn" data-page="-1" type="button" aria-label="Previous page">‹ prev</button>
+        <span class="pager__label" data-page-label></span>
+        <button class="pager__btn" data-page="1" type="button" aria-label="Next page">next ›</button>
+      </div>
       <div class="story" data-story aria-live="polite"></div>
       <p class="copy">The Overmind is writing the record that survives Q-Day.<br />Every minute, it decides what makes it through.</p>
       <section class="log" data-log aria-label="What the Overmind is writing now">

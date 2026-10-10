@@ -98,6 +98,19 @@ html[data-place='room'] .copy, html[data-place='tower'] .copy, html[data-intro] 
 .story__check:focus-visible { outline: 1px solid; outline-offset: 4px; }
 @media (max-width: 640px) { .story { max-width: none; margin-bottom: calc(66px + env(safe-area-inset-bottom, 0px)); } .story__line { margin-bottom: 6px; } }
 @media (prefers-reduced-motion: reduce) { .story__line.is-new { animation: none; } .story__line--voice.is-typing::after { animation: none; } }
+/* Docs: turning the manual's pages */
+.pager {
+  position: fixed; left: 50%; bottom: calc(var(--space-gutter) + env(safe-area-inset-bottom, 0px)); z-index: 2; translate: -50% 0;
+  display: flex; align-items: center; gap: 22px; padding: 6px 16px; pointer-events: auto;
+  border: 1px solid rgb(242 242 242 / 16%); border-radius: 999px; background: rgb(10 10 10 / 62%);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.pager[hidden] { display: none; }
+.pager__btn { white-space: nowrap; padding: 6px 2px; border: 0; background: none; color: var(--color-text-primary); font: inherit; letter-spacing: 0.02em; cursor: pointer; }
+.pager__btn:focus-visible { outline: 1px solid; outline-offset: 4px; }
+.pager__label { white-space: nowrap; min-width: 64px; text-align: center; font-family: var(--font-mono); color: var(--color-text-secondary); }
+@media (max-width: 640px) { .pager { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); } }
+
 /* The walkthrough (src/ui/walkthrough.ts): the instrument's frame on one part, the rest dimmed, the Overmind's line */
 .tour { position: fixed; inset: 0; z-index: 4; display: none; pointer-events: none; }
 html[data-tour] .tour { display: block; }

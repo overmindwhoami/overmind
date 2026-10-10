@@ -184,6 +184,11 @@ export class RemoteArchive implements Archive {
     return { bytes: bytes.length, records, hash, sealed, match: hash === sealed, chain };
   }
 
+  /** The sealing wallet, as the service reports it (address and balance in SOL; null while unknown). */
+  async wallet(): Promise<{ address: string; balance: number | null } | undefined> {
+    try { return (await this.get<{ wallet?: { address: string; balance: number | null } }>('/health')).wallet; } catch { return undefined; }
+  }
+
   /** The lineage went backwards: it was reset (at launch). Everything on the page belongs to the old one, so start over. */
   private restarted() {
     if (this.reloading) return;

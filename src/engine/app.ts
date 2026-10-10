@@ -19,6 +19,7 @@ import { BLUR_EVENT, FOCUS_EVENT, READ_EVENT } from '../ui/indexNav';
 import { WriteLog } from '../ui/writeLog';
 import { Story, type Line } from '../ui/story';
 import { Walkthrough, type Rect, type TourStop } from '../ui/walkthrough';
+import { PAGE_COUNT, drawPage, pages, type Receipts } from '../machine/docs';
 import spec from './tower-spec.json';
 
 const INTERFACE = 'a, button, .lil-gui';
@@ -141,6 +142,11 @@ export class App {
    * with "check a disk" for whoever wants proof. Any input moves it on.
    */
   private intro = { stage: 'off' as 'off' | 'on', i: 0, since: 0 };
+  /** Docs: the page being read, and the spread printed on the manual now. */
+  private docsPage = 0;
+  private docsSpread = -1; // the printed spread (×2, +1 for the large-print edition)
+  private pager = { root: document.querySelector<HTMLElement>('[data-pager]'), label: document.querySelector<HTMLElement>('[data-page-label]') };
+
   private tour = new Walkthrough({ next: () => this.tourNext(), skip: () => this.finishIntro() }, () => this.reduced);
   private story?: Story;
   /** In the room view: the place under the pointer. */
@@ -178,6 +184,7 @@ export class App {
     this.sound = new Sound(document.querySelector<HTMLButtonElement>('[data-sound]'));
     this.tracker = new Tracker({ onLock: this.sound.lock, onTick: this.sound.tick, reduced: () => this.reduced });
     const storyRoot = document.querySelector<HTMLElement>('[data-story]');
+    for (const b of document.querySelectorAll<HTMLButtonElement>('[data-page]')) b.addEventListener('click', () => this.turnDocs(Number(b.dataset.page)));
     if (storyRoot) this.story = new Story(storyRoot, () => this.checkDisk(), () => this.reduced, () => this.startIntro());
     const logRoot = document.querySelector<HTMLElement>('[data-log]');
     if (logRoot) this.log = new WriteLog(logRoot, this.archive, () => this.reduced);
@@ -562,6 +569,42 @@ export class App {
     this.read(n, true);
   }
 
+  /* ---------------------------------------------------------------- docs */
+  /** Turns the docs by `delta` (a page on a tall screen, a spread on a wide one) and prints the spread it lands on. */
+  turnDocs(delta: number) {
+    const tall = this.camera.aspect < 1, step = tall ? 1 : 2;
+    const next = Math.max(0, Math.min(PAGE_COUNT - 1, (tall ? this.docsPage : this.docsPage - (this.docsPage % 2)) + delta * step));
+    if (next === this.docsPage && delta) return;
+    this.docsPage = next;
+    this.room.docsPage = next;
+    void this.printDocs();
+    // the camera glides to the page (on a tall screen it moves between the left and right pages)
+    this.flightFrom.pos.copy(this.camera.position); this.flightFrom.look.copy(this.lookAt); this.flightFrom.up.copy(this.camera.up);
+    this.flightFrom.focus = this.placeFocus;
+    this.flightT = 0; this.flightDur = this.reduced ? 0.01 : 0.7;
+    this.updatePager();
+  }
+  private updatePager() {
+    const tall = this.camera.aspect < 1;
+    if (this.pager.root) this.pager.root.hidden = this.place !== 'docs';
+    if (this.pager.label) this.pager.label.textContent = tall ? `${this.docsPage + 1} / ${PAGE_COUNT}` : `${this.docsPage - (this.docsPage % 2) + 1}–${this.docsPage - (this.docsPage % 2) + 2} / ${PAGE_COUNT}`;
+  }
+  /** Prints the current spread on the manual; the receipts page is filled from the live archive. */
+  private async printDocs() {
+    const spread = Math.floor(this.docsPage / 2);
+    const first = this.archive.disk(0);
+    const r: Receipts = {
+      genesis: first.startedAt || undefined, firstSeal: first.sealed ? first.sealedAt : undefined, sealed: this.archive.sealedCount(),
+      qday: this.archive.watch?.()?.qday?.estimate?.slice(0, 10), coin: (import.meta.env.VITE_OMD_MINT as string | undefined) || undefined,
+    };
+    if (spread === 3 && this.archive.wallet) r.wallet = await this.archive.wallet();
+    const large = this.camera.aspect < 1, key = spread * 2 + (large ? 1 : 0);
+    if (key === this.docsSpread && spread !== 3) return;
+    this.docsSpread = key;
+    const all = pages(r);
+    this.room.manual.print((g, side) => drawPage(g, all[spread * 2 + side], spread * 2 + side, large));
+  }
+
   /** Fly to a place in the room (or home to the tower). Reading a disk ends first. */
   go(name: PlaceName, duration = FLIGHT) {
     if (!this.introFlight) this.finishIntro(); // choosing somewhere ends the first visit's story
@@ -579,7 +622,9 @@ export class App {
     this.place = name;
     this.flightT = 0;
     this.room.clean(name, CLEAN_LAYER);
+    if (name === 'docs') { this.room.docsPage = this.docsPage; void this.printDocs(); }
     window.dispatchEvent(new Event('placechange')); // the menu marks where the camera is going
+    this.updatePager();
     const label = PLACES.find((p) => p.name === name)?.label;
     this.announce(name === 'room' ? 'The room.' : name === 'tower' ? 'overmind: the lineage, newest disk on top.' : `${label}.`);
     if (window.location.hash.slice(1) !== (name === 'tower' ? '' : name)) history.replaceState(null, '', name === 'tower' ? window.location.pathname + window.location.search : `#${name}`);
@@ -749,6 +794,7 @@ export class App {
     if (!this.ready || (e.key !== 'Tab' && e.key !== 'Shift' && this.introInput(e.key))) return;
     if (e.key === 'm' || e.key === 'M') { this.sound.toggle(!this.sound.enabled); return; }
     if (this.station.reading) { if (this.station.key(e.key)) e.preventDefault?.(); return; }
+    if (this.place === 'docs' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) { this.turnDocs(e.key === 'ArrowRight' ? 1 : -1); return; }
     if (this.place !== 'tower') { if (e.key === 'Escape' && this.place !== 'room') this.go('room'); return; }
     if (e.key === 'Enter' && this.focused) { this.read(this.focused.slab.index); return; }
     if (e.key === 'Escape' && this.focused && !(document.activeElement instanceof HTMLAnchorElement)) { this.blur(); return; }
@@ -836,6 +882,7 @@ export class App {
     this.camera.updateProjectionMatrix();
     this.composer.resize();
     this.resizeDirty();
+    if (this.place === 'docs') void this.printDocs(); // a phone turned sideways gets the regular edition, and back
     this.tracker.resize();
   };
 }

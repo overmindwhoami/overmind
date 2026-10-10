@@ -72,6 +72,8 @@ export class Room {
   /** Readable surfaces by place: only the place being visited stays clean. */
   readonly placeFaces: Partial<Record<PlaceName, THREE.Mesh[]>> = {};
   private boardAt = -1;
+  /** The docs page being read (a tall screen frames that page; a wide one, its whole spread). */
+  docsPage = 0;
   /** The blank disks in the room: every vending lane full, one in every wall cubby (tokens take them over as they launch). */
   private blanks?: { set: DiskSet; entries: { rec: FloppyRecord; matrix: THREE.Matrix4; cell: number }[]; kit: FloppyKit; cell: number };
   private placed = false;
@@ -422,7 +424,8 @@ export class Room {
     const g = this.manual.group, { pageW, pageD, gutter } = MANUAL;
     g.updateWorldMatrix(true, false);
     const tall = camera.aspect < 1;
-    const centre = g.localToWorld(v3(tall ? gutter + pageW / 2 : 0, 12, 0));
+    const side = tall ? (this.docsPage % 2 === 0 ? -1 : 1) : 0;
+    const centre = g.localToWorld(v3(side * (gutter + pageW / 2), 12, 0));
     const q = g.getWorldQuaternion(new THREE.Quaternion());
     const toward = v3(0, 0, 1).applyQuaternion(q), pageUp = v3(0, 0, -1).applyQuaternion(q);
     const tilt = 0.2; // radians off vertical, toward the reader
