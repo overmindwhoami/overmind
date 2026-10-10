@@ -57,6 +57,8 @@ export interface Disk {
   fascination: string;
   /** Live archive only: the seal's on-chain record (a transaction link), or pending until it confirms. */
   chain?: { url?: string; pending?: boolean; tx?: string; cluster?: string };
+  /** Live archive only: how many visitors have checked this sealed disk themselves. */
+  checks?: number;
   /** How this disk looks on the tower (shell, label template, hub angle). */
   look: { shell: number; tint: number; label: number; hub: number };
 }
@@ -83,6 +85,10 @@ export interface Archive {
   watch?(): Watch | undefined;
   /** How many visitors are in the room right now (the live service only). */
   presence?(): number | undefined;
+  /** What other visitors did since the last call (the live service only); the page's own actions are left out. */
+  activity?(): Activity[];
+  /** Tells the room this visitor opened or shared a disk (the live service only). */
+  report?(kind: 'open' | 'share', disk: number): void;
   /** Re-checks a sealed disk from the outside (the live service only): re-hash its record, compare with the seal. */
   verify?(n: number): Promise<Verification>;
   /** The sealing wallet (the live service only). */
@@ -103,3 +109,6 @@ export interface Verification {
   match: boolean;
   chain: { state: 'match' | 'mismatch' | 'pending' | 'none' | 'unreachable'; tx?: string; url?: string };
 }
+
+/** Something another visitor did: opened, checked or shared a disk, or is talking to the Overmind. */
+export interface Activity { kind: 'open' | 'check' | 'share' | 'talk'; disk?: number; match?: boolean; checks?: number; at: number }

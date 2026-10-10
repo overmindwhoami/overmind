@@ -4,6 +4,7 @@
  * against the live archive and the chain; anything else is a conversation with the Overmind (server /api/chat).
  */
 import type { Archive } from '../archive/types';
+import { visitor } from '../archive/remote';
 
 export interface TermLine { who: 'you' | 'om' | 'sys'; text: string; at: number }
 const TYPE_MS = 26; // the Overmind's replies type out
@@ -111,7 +112,7 @@ export class Terminal {
     this.chat.push({ role: 'user', content: text });
     if (!this.api) { this.say('om', 'this is a simulation of me. my voice lives on the real server.'); return; }
     try {
-      const r = await fetch(`${this.api}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: this.chat.slice(-8) }) });
+      const r = await fetch(`${this.api}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: this.chat.slice(-8), v: visitor() }) });
       const j = (await r.json()) as { reply?: string };
       const reply = j.reply ?? '…';
       this.chat.push({ role: 'assistant', content: reply });

@@ -5,10 +5,10 @@
  * (a slot every minute, its media a little later, the seal, the next disk).
  */
 import { lookOf, pseudoFingerprint } from './sim';
-import { SLOTS, type Archive, type Coin, type Disk, type Item, type Slot, type Verification, type Watch } from './types';
+import { SLOTS, type Activity, type Archive, type Coin, type Disk, type Item, type Slot, type Verification, type Watch } from './types';
 
 type DiskJson = {
-  n: number; seed: number; fascination: string; written: number; sealed: boolean; fingerprint: string | null; startedAt: number; sealedAt: number | null;
+  n: number; seed: number; fascination: string; written: number; sealed: boolean; fingerprint: string | null; startedAt: number; sealedAt: number | null; checks?: number;
   chain: { url?: string; pending?: boolean; tx?: string; cluster?: string } | null;
 };
 const RPC: Record<string, string> = { 'mainnet-beta': 'https://api.mainnet-beta.solana.com', devnet: 'https://api.devnet.solana.com', testnet: 'https://api.testnet.solana.com' };
@@ -51,6 +51,13 @@ export class RemoteArchive implements Archive {
   watch() { return this.watched; }
   presence() { return this.here; }
   private here?: number;
+  /** Other visitors' actions, waiting for the page; `you` is this page's own tag (its actions are left out). */
+  private others: Activity[] = [];
+  private you?: string;
+  activity() { const a = this.others; this.others = []; return a; }
+  report(kind: 'open' | 'share', disk: number) {
+    void fetch(`${this.base}/api/activity`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, disk, v: visitor() }), keepalive: true }).catch(() => {});
+  }
 
   disk(n: number): Disk {
     const d = this.disks.get(n);
@@ -114,6 +121,14 @@ export class RemoteArchive implements Archive {
   private listen() {
     const es = new EventSource(`${this.base}/api/events?v=${visitor()}`);
     es.addEventListener('presence', (e) => { this.here = (JSON.parse((e as MessageEvent).data) as { here: number }).here; });
+    es.addEventListener('hello', (e) => { this.you = (JSON.parse((e as MessageEvent).data) as { you: string }).you; });
+    es.addEventListener('activity', (e) => {
+      const a = JSON.parse((e as MessageEvent).data) as Activity & { by: string };
+      if (a.kind === 'check' && a.disk !== undefined && a.checks !== undefined) { const d = this.disks.get(a.disk); if (d) d.checks = a.checks; }
+      if (a.by === this.you) return;
+      this.others.push({ kind: a.kind, disk: a.disk, match: a.match, checks: a.checks, at: a.at });
+      if (this.others.length > 6) this.others.shift();
+    });
     es.addEventListener('slot', (e) => {
       const raw = JSON.parse((e as MessageEvent).data) as SlotJson;
       if (raw.every) this.every = raw.every;
@@ -165,7 +180,7 @@ export class RemoteArchive implements Archive {
    * seal's memo and compare that too.
    */
   async verify(n: number): Promise<Verification> {
-    const res = await fetch(`${this.base}/api/disks/${n}/record`, { cache: 'no-store' });
+    const res = await fetch(`${this.base}/api/disks/${n}/record?v=${visitor()}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`${res.status} record`);
     const text = await res.text();
     const bytes = new TextEncoder().encode(text);
@@ -212,7 +227,7 @@ export class RemoteArchive implements Archive {
     const d: Disk = {
       n: x.n, seed: x.seed, startedAt: x.startedAt, sealedAt: x.sealedAt ?? x.startedAt + SLOTS * 60_000, sealed: x.sealed, written: x.written,
       fingerprint: x.fingerprint ?? pseudoFingerprint(x.seed, x.n), fascination: x.fascination, look: lookOf(x.n).look,
-      chain: x.chain ?? undefined,
+      chain: x.chain ?? undefined, checks: x.checks,
     };
     // keep the object identity (callers hold on to it) and never move a disk backwards
     if (prev) Object.assign(prev, d, { written: Math.max(prev.written, d.written), sealed: prev.sealed || d.sealed });
@@ -228,7 +243,7 @@ export class RemoteArchive implements Archive {
 }
 
 /** This browser's visitor id, so the room counts people rather than tabs (random, nothing else in it). */
-function visitor() {
+export function visitor() {
   const fresh = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
   try {
     const v = localStorage.getItem('overmind.v');

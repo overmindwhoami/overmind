@@ -5,12 +5,13 @@
  *   GET /api/disks?from=&to=    disks in a range (at most 200)
  *   GET /api/disks/:n           one disk with its slots
  *   GET /api/events?v=          server-sent events: slot, media, seal, disk, presence (v: the visitor's id, for the count)
+ *   POST /api/activity          {kind: open|share, disk, v}: what a visitor did, told to the room (no free text)
  *   GET /api/coin               $OMD's numbers for the board (DexScreener, cached a minute; none until OMD_MINT is set)
  *   GET /media/:key             the instrument's stills and loops (CORS, immutable)
  * ROUND_EVERY_MS overrides the minute (local testing only).
  */
 import { createServer, type ServerResponse } from 'node:http';
-import { currentDisk, disks, migrate, pool, slots, type DiskRow, type SlotRow } from './db.js';
+import { countCheck, currentDisk, disks, migrate, pool, slots, type DiskRow, type SlotRow } from './db.js';
 import { anchorPending, ensureDisk, events, round, SLOTS } from './archivist.js';
 import { balanceOf, explorer, signer, walletInfo } from './chain.js';
 import { coin } from './coin.js';
@@ -20,6 +21,8 @@ import { get as getMedia, mediaOptions, storage } from './media.js';
 import { MODEL } from './mind.js';
 import { talk } from './talk.js';
 import { arrive, here, presenceEvents } from './presence.js';
+import { activityEvents, lately, tagOf, tell, visitorOf } from './activity.js';
+import { createHash } from 'node:crypto';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const EVERY = Number(process.env.ROUND_EVERY_MS ?? 60_000);
@@ -34,7 +37,7 @@ let nextAt = 0;
 let every = EVERY;
 
 const diskJson = (d: DiskRow) => ({
-  n: d.n, seed: Number(d.seed), fascination: d.fascination, written: d.written, sealed: !!d.sealed_at, fingerprint: d.fingerprint,
+  n: d.n, seed: Number(d.seed), fascination: d.fascination, written: d.written, sealed: !!d.sealed_at, fingerprint: d.fingerprint, checks: d.checks ?? 0,
   startedAt: +new Date(d.started_at), sealedAt: d.sealed_at ? +new Date(d.sealed_at) : null,
   chain: d.seal_tx ? { cluster: d.seal_cluster, tx: d.seal_tx, url: explorer(d.seal_tx) } : d.sealed_at ? { pending: true } : null,
 });
@@ -49,19 +52,35 @@ function send(res: ServerResponse, status: number, body: unknown, headers: Recor
   res.end(JSON.stringify(body));
 }
 
+/** A visitor's CHECK counts once per disk per ten minutes, however many times they press it. */
+const checked = new Map<string, number>();
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
+  const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
   try {
     if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '86400' }); return res.end(); }
     // the terminal: the only thing a visitor can send
     if (req.method === 'POST' && path === '/api/chat') {
       let raw = '';
       for await (const chunk of req) { raw += chunk; if (raw.length > 8_000) return send(res, 413, { error: 'too long' }); }
-      let body: { messages?: { role: 'user' | 'assistant'; content: string }[] } = {};
+      let body: { messages?: { role: 'user' | 'assistant'; content: string }[]; v?: string } = {};
       try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'bad json' }); }
-      const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
-      return send(res, 200, await talk(ip, Array.isArray(body.messages) ? body.messages : []));
+      const r = await talk(ip, Array.isArray(body.messages) ? body.messages : []);
+      if (r.status !== 'limited') tell({ kind: 'talk', by: tagOf(visitorOf(body.v, ip)) }, ip);
+      return send(res, 200, r);
+    }
+    // what a visitor did (opened or shared a disk): a kind and a number, nothing they typed
+    if (req.method === 'POST' && path === '/api/activity') {
+      let raw = '';
+      for await (const chunk of req) { raw += chunk; if (raw.length > 500) return send(res, 413, { error: 'too long' }); }
+      let body: { kind?: string; disk?: number; v?: string } = {};
+      try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'bad json' }); }
+      const d = await currentDisk();
+      if ((body.kind !== 'open' && body.kind !== 'share') || !Number.isInteger(body.disk) || body.disk! < 0 || !d || body.disk! > d.n) return send(res, 400, { error: 'no' });
+      tell({ kind: body.kind, disk: body.disk, by: tagOf(visitorOf(body.v, ip)) }, ip);
+      res.writeHead(204, { 'access-control-allow-origin': '*' }); return res.end();
     }
     if (req.method !== 'GET') return send(res, 405, { error: 'read only' });
     if (path === '/api/balance') {
@@ -90,8 +109,18 @@ const server = createServer(async (req, res) => {
       const n = Number(rec[1]);
       const [d] = await disks(n, n);
       if (!d?.sealed_at) return send(res, 404, { error: 'not sealed yet' });
-      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=86400', 'x-fingerprint': d.fingerprint ?? '' });
-      return res.end(recordText(await slots(n)));
+      const text = recordText(await slots(n));
+      // a visitor checking: count it once, and tell the room (whether what was served still hashes to the seal)
+      const by = visitorOf(url.searchParams.get('v'), ip), key = `${by}:${n}`, now = Date.now();
+      if (now - (checked.get(key) ?? 0) > 10 * 60_000) {
+        checked.set(key, now);
+        if (checked.size > 50_000) for (const [k, t] of checked) if (now - t > 10 * 60_000) checked.delete(k);
+        const checks = await countCheck(n);
+        const match = createHash('sha256').update(text).digest('hex') === d.fingerprint;
+        tell({ kind: 'check', disk: n, match, checks, by: tagOf(by) }, ip);
+      }
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'cache-control': 'no-store', 'x-fingerprint': d.fingerprint ?? '' });
+      return res.end(text);
     }
     const one = path.match(/^\/api\/disks\/(\d+)$/);
     if (one) {
@@ -119,8 +148,12 @@ const server = createServer(async (req, res) => {
       presenceEvents.on('presence', onPresence);
       const leave = arrive(url.searchParams.get('v'));
       onPresence({ here: here() });
+      const onActivity = emit('activity');
+      activityEvents.on('activity', onActivity);
+      emit('hello')({ you: tagOf(visitorOf(url.searchParams.get('v'), ip)) });
+      for (const a of lately()) onActivity(a);
       const beat = setInterval(() => res.write(': beat\n\n'), 25_000);
-      req.on('close', () => { clearInterval(beat); leave(); presenceEvents.off('presence', onPresence); watchEvents.off('watch', onWatch); for (const [k, h] of Object.entries(handlers)) events.off(k, h); });
+      req.on('close', () => { clearInterval(beat); leave(); activityEvents.off('activity', onActivity); presenceEvents.off('presence', onPresence); watchEvents.off('watch', onWatch); for (const [k, h] of Object.entries(handlers)) events.off(k, h); });
       return;
     }
     const media = path.match(/^\/media\/([\w.-]+)$/);

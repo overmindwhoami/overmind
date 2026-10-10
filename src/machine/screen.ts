@@ -255,7 +255,9 @@ export class ScreenRenderer {
     g.fillStyle = '#2a2a2a'; g.fillRect(x + w - 22, top - 21, 8, sbH);
     g.fillStyle = '#bdbdbd'; g.fillRect(x + w - 22, top - 21 + frac * sbH * (1 - Math.min(1, ROWS / Math.max(1, s.slots.length))), 8, sbH * Math.min(1, ROWS / Math.max(1, s.slots.length)));
     g.fillStyle = '#9a9a9a'; g.font = MONO(15);
-    g.fillText(`${String(s.slots.length).padStart(3)} file(s)   ${(s.slots.filter((x2) => x2.item).length * SLOT_BYTES).toLocaleString('en-US')} bytes`, x + 18, y + h - 46);
+    // and, for a sealed disk on the live archive, how many visitors have checked it themselves
+    const checks = d.sealed && d.checks !== undefined ? `   ${d.checks ? `checked by ${d.checks.toLocaleString('en-US')} visitor${d.checks === 1 ? '' : 's'}` : 'not checked yet'}` : '';
+    g.fillText(`${String(s.slots.length).padStart(3)} file(s)   ${(s.slots.filter((x2) => x2.item).length * SLOT_BYTES).toLocaleString('en-US')} bytes${checks}`, x + 18, y + h - 46);
     g.fillText(d.sealed ? '↑↓ select   ⏎ open   c check   esc eject' : '↑↓ select   ⏎ open   esc eject', x + 18, y + h - 20);
     g.fillStyle = '#e6e6e6'; g.textAlign = 'right'; g.fillText('[ EJECT ]', x + w - 24, y + h - 20); g.textAlign = 'left';
     this.hits.push({ x: x + w - 140, y: y + h - 40, w: 120, h: 30, hit: { kind: 'eject' } });

@@ -14,7 +14,7 @@ import { Tracker, type TrackerContent } from '../hud/tracker';
 import { clientOf, preload, sourceFor } from '../hud/source';
 import { Sound } from '../audio/sound';
 import { SimArchive, fmtDisk, fmtTime, type Archive } from '../archive/sim';
-import { sourceName, type Coin } from '../archive/types';
+import { sourceName, type Activity, type Coin } from '../archive/types';
 import { BLUR_EVENT, FOCUS_EVENT, READ_EVENT } from '../ui/indexNav';
 import { WriteLog } from '../ui/writeLog';
 import { Story, type Line } from '../ui/story';
@@ -148,17 +148,47 @@ export class App {
   private terminal!: Terminal;
   private termForm = document.querySelector<HTMLFormElement>('[data-term]');
   private termLog = document.querySelector<HTMLElement>('[data-term-log]');
-  /** Who else is here: a quiet line under the logo (the live service only). */
+  /**
+   * Who else is here: a quiet line under the logo (the live service only). What other visitors do (open, check, share
+   * a disk, talk to the Overmind) takes the line over for a few seconds, one at a time, as a link to the same thing.
+   */
   private hereEl = document.querySelector<HTMLElement>('[data-here]');
-  private hereShown?: number;
+  private hereShown?: string;
+  private ticker: Activity[] = [];
+  private tickerUntil = 0;
   private updatePresence() {
+    const el = this.hereEl, text = el?.querySelector<HTMLElement>('[data-here-text]');
+    if (!el || !text) return;
+    for (const a of this.archive.activity?.() ?? []) {
+      if (Date.now() - a.at < 3 * 60_000) this.ticker.push(a);
+      if (a.kind === 'check' && a.disk === this.station.disk) this.station.touch(); // the count on the screen moves
+    }
+    if (this.ticker.length > 3) this.ticker.splice(0, this.ticker.length - 3);
+    const now = performance.now();
+    if (now < this.tickerUntil) return;
+    const a = this.ticker.shift();
+    if (a) {
+      this.tickerUntil = now + 5200;
+      const disk = a.disk === undefined ? '' : `disk ${String(a.disk + 1).padStart(4, '0')}`;
+      const line = a.kind === 'open' ? `someone opened ${disk}` : a.kind === 'share' ? `someone shared ${disk}`
+        : a.kind === 'check' ? `someone checked ${disk}${a.match ? ': it matched' : ''}` : 'someone is talking to the overmind';
+      const go = document.createElement('button');
+      go.type = 'button'; go.className = 'here__go'; go.textContent = line;
+      go.addEventListener('click', () => { if (a.disk !== undefined) this.read(a.disk); else this.go('terminal'); });
+      this.showHere(line, go);
+      return;
+    }
     const n = this.archive.presence?.();
-    if (!this.hereEl || n === undefined || n === this.hereShown) return;
-    this.hereShown = n;
-    this.hereEl.hidden = false;
-    const text = this.hereEl.querySelector('[data-here-text]');
-    if (text) text.textContent = n <= 1 ? 'just you and me' : `${n.toLocaleString('en-US')} in the room`;
-    this.hereEl.classList.remove('is-new'); void this.hereEl.offsetWidth; this.hereEl.classList.add('is-new');
+    if (n === undefined) return;
+    const line = n <= 1 ? 'just you and me' : `${n.toLocaleString('en-US')} in the room`;
+    if (line !== this.hereShown) this.showHere(line, document.createTextNode(line));
+  }
+  private showHere(line: string, node: Node) {
+    const el = this.hereEl!, text = el.querySelector<HTMLElement>('[data-here-text]')!;
+    this.hereShown = line;
+    el.hidden = false;
+    text.replaceChildren(node);
+    el.classList.remove('is-new'); void el.offsetWidth; el.classList.add('is-new');
   }
   private termKey = '';
   /** The phone's transcript of the terminal (the CRT is too small to read there). */
@@ -827,6 +857,7 @@ export class App {
     const inDrive = this.station.open ? this.station.disk : this.station.reading ? this.linkedDisk : undefined;
     if (inDrive !== this.linkedDisk) {
       this.linkedDisk = inDrive;
+      if (inDrive !== undefined) this.archive.report?.('open', inDrive); // the room hears about it
       history.replaceState(null, '', inDrive === undefined ? window.location.pathname + window.location.search : `#disk-${inDrive + 1}`);
     }
   }
@@ -837,6 +868,7 @@ export class App {
     if (n === undefined || !this.dom.share) return;
     const url = `${window.location.origin}${window.location.pathname}#disk-${n + 1}`;
     const text = `${fmtDisk(n)}: what made it through, before Q-Day.`;
+    this.archive.report?.('share', n);
     try {
       if (navigator.share && this.isTouch) { await navigator.share({ title: 'Overmind', text, url }); return; }
       await navigator.clipboard.writeText(url);

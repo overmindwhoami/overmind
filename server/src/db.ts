@@ -22,7 +22,7 @@ export interface SlotRow {
   qday_shift: number | null;
 }
 export interface DiskRow {
-  n: number; seed: number; started_at: string; sealed_at: string | null; fingerprint: string | null; fascination: string; written: number;
+  n: number; seed: number; started_at: string; sealed_at: string | null; fingerprint: string | null; fascination: string; written: number; checks: number;
   seal_tx: string | null; seal_cluster: string | null;
 }
 
@@ -55,6 +55,7 @@ export async function migrate() {
     alter table disks add column if not exists seal_tx text;
     alter table disks add column if not exists seal_cluster text;
     alter table slots add column if not exists qday_shift integer;
+    alter table disks add column if not exists checks integer not null default 0;
     create table if not exists qday (
       id integer primary key default 1 check (id = 1),
       estimate date not null,
@@ -95,6 +96,10 @@ export async function writeSlot(s: Omit<SlotRow, 'time'>) {
 }
 export async function updateSlotMedia(disk: number, k: number, media: { media?: string; clip?: string }) {
   await pool.query(`update slots set item = item || $3::jsonb where disk = $1 and k = $2 and item is not null`, [disk, k, JSON.stringify(media)]);
+}
+/** One more visitor checked this disk; returns the new count. */
+export async function countCheck(n: number): Promise<number> {
+  return (await pool.query(`update disks set checks = checks + 1 where n = $1 returning checks`, [n])).rows[0]?.checks ?? 0;
 }
 export async function sealDisk(n: number, fingerprint: string) {
   await pool.query(`update disks set sealed_at = now(), fingerprint = $2 where n = $1`, [n, fingerprint]);

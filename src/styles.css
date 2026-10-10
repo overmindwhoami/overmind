@@ -73,6 +73,10 @@ html:not(.show-tags) .tag { pointer-events: none; }
 .here[hidden] { display: none; }
 .here__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .here.is-new [data-here-text] { animation: here-new 900ms steps(6, jump-none); }
+.here__go { padding: 0; border: 0; background: none; color: var(--color-text-primary); font: inherit; letter-spacing: inherit; cursor: pointer; text-align: left; }
+.here__go::after { content: ' ›'; color: var(--color-text-secondary); }
+.here__go:hover { text-decoration: underline; text-underline-offset: 3px; }
+.here__go:focus-visible { outline: 1px solid; outline-offset: 4px; }
 @keyframes here-new { 0%, 33%, 67% { opacity: 0.2; } 17%, 50%, 100% { opacity: 1; } }
 .is-reading .here, [data-tour] .here { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .here.is-new [data-here-text] { animation: none; } }
