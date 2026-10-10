@@ -148,6 +148,18 @@ export class App {
   private terminal!: Terminal;
   private termForm = document.querySelector<HTMLFormElement>('[data-term]');
   private termLog = document.querySelector<HTMLElement>('[data-term-log]');
+  /** Who else is here: a quiet line under the logo (the live service only). */
+  private hereEl = document.querySelector<HTMLElement>('[data-here]');
+  private hereShown?: number;
+  private updatePresence() {
+    const n = this.archive.presence?.();
+    if (!this.hereEl || n === undefined || n === this.hereShown) return;
+    this.hereShown = n;
+    this.hereEl.hidden = false;
+    const text = this.hereEl.querySelector('[data-here-text]');
+    if (text) text.textContent = n <= 1 ? 'just you and me' : `${n.toLocaleString('en-US')} in the room`;
+    this.hereEl.classList.remove('is-new'); void this.hereEl.offsetWidth; this.hereEl.classList.add('is-new');
+  }
   private termKey = '';
   /** The phone's transcript of the terminal (the CRT is too small to read there). */
   private updateTermLog() {
@@ -375,6 +387,7 @@ export class App {
     this.updateRoomLabel();
     this.updateTags();
     this.updateTermLog();
+    this.updatePresence();
     if (this.station.reading || this.place !== 'tower' || this.flightT < 1 || this.tour.active) this.hover = undefined;
     else if (this.focused) this.hover = this.focused;
     else {

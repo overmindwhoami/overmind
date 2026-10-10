@@ -65,6 +65,17 @@ html:not(.show-tags) .tag { pointer-events: none; }
 .chrome > a:focus-visible { outline: 1px solid; outline-offset: 6px; }
 
 .logo { grid-area: 1 / 1; place-self: start; height: var(--space-row); line-height: var(--space-row); font-weight: 700; font-size: var(--text-lead); letter-spacing: 0.1em; }
+/* Who's in the room: under the logo, quiet; out of the way while reading or on the walkthrough */
+.here {
+  grid-area: 1 / 1; place-self: start; display: flex; align-items: center; gap: 8px; margin: var(--space-row) 0 0;
+  color: var(--color-text-secondary); letter-spacing: var(--tracking-ui); white-space: nowrap; transition: opacity var(--dur-ui);
+}
+.here[hidden] { display: none; }
+.here__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.here.is-new [data-here-text] { animation: here-new 900ms steps(6, jump-none); }
+@keyframes here-new { 0%, 33%, 67% { opacity: 0.2; } 17%, 50%, 100% { opacity: 1; } }
+.is-reading .here, [data-tour] .here { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .here.is-new [data-here-text] { animation: none; } }
 .menu { grid-area: 1 / 2; place-self: start end; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 22px; max-width: 60vw; letter-spacing: var(--tracking-ui); }
 .menu__item { pointer-events: auto; color: inherit; opacity: 0.62; transition: opacity var(--dur-ui); }
 .menu__item:hover, .menu__item:focus-visible, .menu__item[aria-current='true'] { opacity: 1; }
@@ -347,6 +358,7 @@ html[data-place='room'] .log__note, html[data-place='room'] .log__meta { display
 @media (width <= 640px) {
   /* phones: a compact strip under the logo; the newest save only */
   .log { --bar: 100%; --tick: 3px; grid-area: 2 / 1 / 3 / 3; align-self: start; width: 100%; margin-top: 4px; }
+  .here { margin-bottom: 12px; }
   .log__bar { margin: 8px 0 4px; }
   .log__list { margin-top: 8px; }
   .log__entry { grid-template-columns: 44px 1fr; border-top: 0; padding: 0; }

@@ -49,6 +49,8 @@ export class RemoteArchive implements Archive {
   current() { return { disk: this.cur.disk, written: Math.min(this.cur.written, SLOTS), msToNext: Math.max(0, this.nextAt - Date.now()) }; }
   sealedCount() { return this.cur.disk; }
   watch() { return this.watched; }
+  presence() { return this.here; }
+  private here?: number;
 
   disk(n: number): Disk {
     const d = this.disks.get(n);
@@ -91,8 +93,9 @@ export class RemoteArchive implements Archive {
 
   /** The state, the top of the lineage and the live disk's slots (on start, and after the event stream drops). */
   private async sync() {
-    const st = await this.get<{ now: number; disk: DiskJson | null; msToNext: number; every?: number; watch?: Watch }>('/api/state');
+    const st = await this.get<{ now: number; disk: DiskJson | null; msToNext: number; every?: number; watch?: Watch; here?: number }>('/api/state');
     if (st.every) this.every = st.every;
+    if (st.here) this.here = st.here;
     this.watched = st.watch;
     this.offset = st.now - Date.now();
     this.nextAt = Date.now() + st.msToNext;
@@ -109,7 +112,8 @@ export class RemoteArchive implements Archive {
   }
 
   private listen() {
-    const es = new EventSource(`${this.base}/api/events`);
+    const es = new EventSource(`${this.base}/api/events?v=${visitor()}`);
+    es.addEventListener('presence', (e) => { this.here = (JSON.parse((e as MessageEvent).data) as { here: number }).here; });
     es.addEventListener('slot', (e) => {
       const raw = JSON.parse((e as MessageEvent).data) as SlotJson;
       if (raw.every) this.every = raw.every;
@@ -221,4 +225,14 @@ export class RemoteArchive implements Archive {
   private toSlot(s: SlotJson): Slot {
     return { disk: s.disk, index: s.index, time: s.time, item: s.item ? this.absolute(s.item) : undefined, note: s.note, file: s.file };
   }
+}
+
+/** This browser's visitor id, so the room counts people rather than tabs (random, nothing else in it). */
+function visitor() {
+  const fresh = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
+  try {
+    const v = localStorage.getItem('overmind.v');
+    if (v && /^[0-9a-f]{16}$/.test(v)) return v;
+    const n = fresh(); localStorage.setItem('overmind.v', n); return n;
+  } catch { return fresh(); }
 }

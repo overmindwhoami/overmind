@@ -4,7 +4,7 @@
  *   GET /api/state              the disk being written, how far along, time to the next save
  *   GET /api/disks?from=&to=    disks in a range (at most 200)
  *   GET /api/disks/:n           one disk with its slots
- *   GET /api/events             server-sent events: slot, media, seal, disk
+ *   GET /api/events?v=          server-sent events: slot, media, seal, disk, presence (v: the visitor's id, for the count)
  *   GET /api/coin               $OMD's numbers for the board (DexScreener, cached a minute; none until OMD_MINT is set)
  *   GET /media/:key             the instrument's stills and loops (CORS, immutable)
  * ROUND_EVERY_MS overrides the minute (local testing only).
@@ -19,6 +19,7 @@ import { refreshWatch, watch, watchEvents } from './watch.js';
 import { get as getMedia, mediaOptions, storage } from './media.js';
 import { MODEL } from './mind.js';
 import { talk } from './talk.js';
+import { arrive, here, presenceEvents } from './presence.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const EVERY = Number(process.env.ROUND_EVERY_MS ?? 60_000);
@@ -76,7 +77,7 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/api/state') {
       const d = await currentDisk();
-      return send(res, 200, { now: Date.now(), slots: SLOTS, disk: d ? diskJson(d) : null, msToNext: Math.max(0, nextAt - Date.now()), every, watch, launchAt: Number.isNaN(LAUNCH_AT) ? null : LAUNCH_AT });
+      return send(res, 200, { now: Date.now(), slots: SLOTS, disk: d ? diskJson(d) : null, msToNext: Math.max(0, nextAt - Date.now()), every, watch, here: here(), launchAt: Number.isNaN(LAUNCH_AT) ? null : LAUNCH_AT });
     }
     if (path === '/api/disks') {
       const from = Math.max(0, Number(url.searchParams.get('from') ?? 0) | 0);
@@ -114,8 +115,12 @@ const server = createServer(async (req, res) => {
       for (const [k, h] of Object.entries(handlers)) events.on(k, h);
       const onWatch = emit('watch');
       watchEvents.on('watch', onWatch);
+      const onPresence = emit('presence');
+      presenceEvents.on('presence', onPresence);
+      const leave = arrive(url.searchParams.get('v'));
+      onPresence({ here: here() });
       const beat = setInterval(() => res.write(': beat\n\n'), 25_000);
-      req.on('close', () => { clearInterval(beat); watchEvents.off('watch', onWatch); for (const [k, h] of Object.entries(handlers)) events.off(k, h); });
+      req.on('close', () => { clearInterval(beat); leave(); presenceEvents.off('presence', onPresence); watchEvents.off('watch', onWatch); for (const [k, h] of Object.entries(handlers)) events.off(k, h); });
       return;
     }
     const media = path.match(/^\/media\/([\w.-]+)$/);

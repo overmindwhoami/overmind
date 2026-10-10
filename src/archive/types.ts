@@ -81,6 +81,8 @@ export interface Archive {
   load(): Promise<void>;
   /** The Q-Day watch, when the archive keeps one (the live service does). */
   watch?(): Watch | undefined;
+  /** How many visitors are in the room right now (the live service only). */
+  presence?(): number | undefined;
   /** Re-checks a sealed disk from the outside (the live service only): re-hash its record, compare with the seal. */
   verify?(n: number): Promise<Verification>;
   /** The sealing wallet (the live service only). */
