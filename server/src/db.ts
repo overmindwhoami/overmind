@@ -80,6 +80,10 @@ export async function slots(n: number): Promise<SlotRow[]> {
 export async function recentNotes(limit = 6): Promise<string[]> {
   return (await pool.query(`select note from slots order by time desc limit $1`, [limit])).rows.map((r) => r.note);
 }
+/** The latest saves: what came through (title, year) and the note on it, newest first. */
+export async function recentSaves(limit = 3): Promise<{ title: string | null; year: string | null; note: string }[]> {
+  return (await pool.query(`select item->>'title' as title, item->>'year' as year, note from slots order by time desc limit $1`, [limit])).rows;
+}
 export async function createDisk(n: number, seed: number, fascination: string, dice: Dice) {
   await pool.query(`insert into disks (n, seed, fascination, dice) values ($1, $2, $3, $4) on conflict do nothing`, [n, seed, fascination, dice]);
 }

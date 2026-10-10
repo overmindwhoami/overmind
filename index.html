@@ -26,6 +26,8 @@
     <link crossorigin href="https://fonts.gstatic.com" rel="preconnect" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
     <link href="/favicon.svg" rel="icon" type="image/svg+xml" />
+    <link href="/apple-touch-icon.png" rel="apple-touch-icon" />
+    <link href="/manifest.webmanifest" rel="manifest" />
   </head>
   <body>
     <h1 class="title">Overmind</h1>
@@ -78,7 +80,10 @@
         <ol class="log__list" data-log-list></ol>
       </section>
       <a class="reader-link link" data-reader-link hidden rel="noopener" target="_blank"></a>
-      <button class="eject" data-eject hidden type="button">Eject</button>
+      <div class="reader-actions">
+        <button class="share" data-share hidden type="button">Share</button>
+        <button class="eject" data-eject hidden type="button">Eject</button>
+      </div>
       <p class="sr-only" aria-live="polite" data-announce></p>
       <button aria-label="Turn sound on" aria-pressed="false" class="sound" data-sound type="button">
         <span aria-hidden="true" class="bars"><span></span><span></span><span></span><span></span></span>

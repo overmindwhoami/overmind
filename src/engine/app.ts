@@ -170,6 +170,7 @@ export class App {
   private dom = {
     link: document.querySelector<HTMLAnchorElement>('[data-reader-link]'),
     eject: document.querySelector<HTMLButtonElement>('[data-eject]'),
+    share: document.querySelector<HTMLButtonElement>('[data-share]'),
     announce: document.querySelector<HTMLElement>('[data-announce]'),
   };
 
@@ -808,6 +809,28 @@ export class App {
       if (s) this.announce(`${s.item?.title ?? 'Nothing came through'}. ${s.note}`);
     }
     if (this.dom.eject) this.dom.eject.hidden = !this.station.open;
+    if (this.dom.share) this.dom.share.hidden = !this.station.open;
+    // the address names the disk in the drive (#disk-15), so it can be sent; ejecting goes back to the tower's
+    const inDrive = this.station.open ? this.station.disk : this.station.reading ? this.linkedDisk : undefined;
+    if (inDrive !== this.linkedDisk) {
+      this.linkedDisk = inDrive;
+      history.replaceState(null, '', inDrive === undefined ? window.location.pathname + window.location.search : `#disk-${inDrive + 1}`);
+    }
+  }
+  private linkedDisk?: number;
+  /** Sends the disk in the drive: the phone's share sheet, else the link on the clipboard. */
+  private async share() {
+    const n = this.station.disk;
+    if (n === undefined || !this.dom.share) return;
+    const url = `${window.location.origin}${window.location.pathname}#disk-${n + 1}`;
+    const text = `${fmtDisk(n)}: what made it through, before Q-Day.`;
+    try {
+      if (navigator.share && this.isTouch) { await navigator.share({ title: 'Overmind', text, url }); return; }
+      await navigator.clipboard.writeText(url);
+      this.dom.share.textContent = 'Link copied';
+      this.announce('Link copied.');
+      window.setTimeout(() => { if (this.dom.share) this.dom.share.textContent = 'Share'; }, 1600);
+    } catch { /* dismissed the sheet, or no clipboard */ }
   }
   private announce(text: string) { if (this.dom.announce) this.dom.announce.textContent = text; }
 
@@ -824,6 +847,7 @@ export class App {
     window.addEventListener('resize', this.resize);
     window.addEventListener('wheel', this.onWheel, { passive: true });
     this.dom.eject?.addEventListener('click', () => this.station.eject());
+    this.dom.share?.addEventListener('click', () => void this.share());
   }
 
   onWheel = (e: { deltaY: number }) => {

@@ -1,11 +1,12 @@
 /**
  * The terminal: talk to the Overmind. Each message gets one short Claude reply in its own voice, grounded in what it is
  * actually doing (the disk it's on, its latest saves and notes, its Q-Day guess). Public and unauthenticated, so it is
- * fenced: a rate limit per visitor, a daily cap across everyone, short replies, and a template voice when there is no
- * key, the cap is hit, or the call fails.
+ * fenced: a rate limit per visitor, a daily cap across everyone, short replies, and the written voice (answers.ts) when
+ * there is no key, the cap is hit, or the call fails.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { currentDisk, qday, recentNotes } from './db.js';
+import { answer, type Facts } from './answers.js';
+import { currentDisk, qday, recentSaves } from './db.js';
 
 const MODEL = process.env.CHAT_MODEL ?? 'claude-haiku-5-5';
 const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ maxRetries: 1, timeout: 25_000 }) : undefined;
@@ -40,18 +41,21 @@ export async function talk(ip: string, history: { role: 'user' | 'assistant'; co
   const msgs = history.filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
     .slice(-8).map((m) => ({ role: m.role, content: m.content.slice(0, MAX_IN) }));
   if (!msgs.length || msgs[msgs.length - 1].role !== 'user') return { reply: 'say something.', model: 'template' };
-  if (!client) return { reply: "my voice is asleep right now. the commands still work: try HELP, WHY or QDAY.", model: 'template', status: 'asleep' };
-  if (today >= DAILY) return { reply: "i've said all i can say today. i'm still writing; come back tomorrow, or try WHY to read my latest note.", model: 'limit', status: 'capped' };
+
+  // what it is doing right now, so it can talk about it truthfully (either voice)
+  const disk = await currentDisk().catch(() => undefined);
+  const saves = await recentSaves(5).catch(() => []);
+  const clock = await qday(process.env.QDAY_START ?? '2032-01-01').catch(() => undefined);
+  const facts: Facts = { disk: disk?.n, written: disk?.written, sealed: disk?.n, qday: clock?.estimate, reason: clock?.reason, saves };
+  const written = (status: string) => ({ reply: answer(msgs[msgs.length - 1].content, facts, msgs.length + now / 7919), model: 'written', status });
+  if (!client) return written('asleep');
+  if (today >= DAILY) return written('capped');
   today++;
 
-  // what it is doing right now, so it can talk about it truthfully
-  const disk = await currentDisk().catch(() => undefined);
-  const notes = await recentNotes(5).catch(() => [] as string[]);
-  const clock = await qday(process.env.QDAY_START ?? '2032-01-01').catch(() => undefined);
   const context = [
     disk ? `You are writing disk ${String(disk.n + 1).padStart(4, '0')}, ${disk.written} of 90 slots written. ${disk.n} disks sealed so far.` : '',
     clock ? `Your Q-Day guess: ${clock.estimate}${clock.reason ? ` (last moved: ${clock.reason})` : ''}.` : '',
-    notes.length ? `Your latest notes, newest first:\n${notes.map((n) => `- ${n}`).join('\n')}` : '',
+    saves.length ? `Your latest saves, newest first:\n${saves.map((x) => `- ${x.title ?? '(nothing came through)'}${x.year ? ` (${x.year})` : ''}: ${x.note}`).join('\n')}` : '',
   ].filter(Boolean).join('\n');
 
   try {
@@ -64,6 +68,6 @@ export async function talk(ip: string, history: { role: 'user' | 'assistant'; co
     return { reply: text.slice(0, 600) || '…', model: MODEL };
   } catch (e) {
     console.warn('talk failed', e instanceof Anthropic.APIError ? `${e.status} ${e.message}` : String(e).slice(0, 160));
-    return { reply: 'static on the line. say that again in a minute?', model: 'template', status: 'error' };
+    return written('error');
   }
 }

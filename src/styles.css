@@ -289,13 +289,15 @@ html[data-place='room'] .log__note, html[data-place='room'] .log__meta { display
 
 /* Reading a disk in the machine: the real link for the open entry, and an eject control for touch and keyboard */
 .reader-link { grid-area: 3 / 2; place-self: end end; margin-right: 44px; letter-spacing: var(--tracking-ui); }
-.reader-link[hidden], .eject[hidden] { display: none; }
-.eject {
-  grid-area: 1 / 2; place-self: start end; margin-top: calc(var(--space-row) + 4px); padding: 0; border: 0; background: none; color: inherit;
+.reader-link[hidden], .eject[hidden], .share[hidden] { display: none; }
+.reader-actions { grid-area: 1 / 2; place-self: start end; display: flex; gap: 28px; margin-top: calc(var(--space-row) + 4px); pointer-events: none; }
+.eject, .share {
+  padding: 0; border: 0; background: none; color: inherit; pointer-events: auto;
   font: inherit; letter-spacing: var(--tracking-ui); cursor: pointer; appearance: none;
 }
 .eject::before { content: '⏏ '; }
-.eject:focus-visible { outline: 1px solid; outline-offset: 4px; }
+.share::before { content: '↗ '; }
+.eject:focus-visible, .share:focus-visible { outline: 1px solid; outline-offset: 4px; }
 .is-reading .copy { opacity: 0; transition: opacity var(--dur-ui); }
 .copy { transition: opacity var(--dur-ui); }
 @media (max-width: 640px) { .copy { margin-bottom: calc(66px + env(safe-area-inset-bottom, 0px)); } }

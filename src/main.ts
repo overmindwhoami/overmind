@@ -6,8 +6,9 @@ import { RemoteArchive } from './archive/remote';
 
 const PLACE_NAMES = ['room', 'docs', 'omd', 'terminal', 'launch', 'explorer', 'mint'] as const;
 type Place = (typeof PLACE_NAMES)[number] | 'tower';
-/** The page opens on the tower; a hash names a place (#room, #omd, …). */
+/** The page opens on the tower; a hash names a place (#room, #omd, …) or a disk to read (#disk-15). */
 const placeOf = (hash: string): Place => (PLACE_NAMES as readonly string[]).includes(hash.slice(1)) ? (hash.slice(1) as Place) : 'tower';
+const diskOf = (hash: string) => { const m = /^#disk-(\d{1,6})$/.exec(hash); return m && +m[1] > 0 ? +m[1] - 1 : undefined; };
 
 /** The menu: each item flies the camera to its place in the room; the back button, Esc and the logo return to the room. */
 function wirePlaces(app: App) {
@@ -26,8 +27,9 @@ function wirePlaces(app: App) {
   window.addEventListener('placechange', mark);
   window.addEventListener('wheel', () => queueMicrotask(mark), { passive: true });
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') queueMicrotask(mark); });
-  window.addEventListener('hashchange', () => { app.go(placeOf(window.location.hash)); mark(); });
-  if (placeOf(window.location.hash) !== 'tower') app.go(placeOf(window.location.hash));
+  const route = () => { const d = diskOf(window.location.hash); if (d !== undefined) app.read(d); else app.go(placeOf(window.location.hash)); mark(); };
+  window.addEventListener('hashchange', route);
+  if (diskOf(window.location.hash) !== undefined || placeOf(window.location.hash) !== 'tower') route();
   mark();
 }
 
