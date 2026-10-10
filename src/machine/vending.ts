@@ -16,15 +16,25 @@ import {
 
 export const VEND = { w: 900, d: 780, h: 1830, col: 190, feet: 50 } as const;
 const FZ = VEND.d / 2, X0 = -VEND.w / 2, XC = VEND.w / 2 - VEND.col; // cabinet front, left side, control column's left edge
-const SHELVES = 5, LANES = 5, Y_SHELF0 = 640, SHELF_PITCH = 210;
+const SHELVES = 6, LANES = 5, Y_SHELF0 = 600, SHELF_PITCH = 186, TURNS = 7;
+/** Disks per lane (one between each pair of coil turns). */
+export const VEND_TURNS = TURNS;
 const LOOM: Key[] = ['wireA', 'wireB', 'wireC', 'dark'];
 const srgb = (r: number, g: number, b: number) => new THREE.Color().setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace);
 
-/** A blank disk standing face out (label +z, shutter up), merged geometry. */
-function standingBlank(P: Parts, x: number, y: number, z: number) {
-  P.add('chip', box(90, 94, 3.2).translate(x, y + 47, z));
-  P.add('tin', box(46, 30, 0.4).translate(x + 4, y + 79, z + 1.8));
-  P.add('seam', box(10, 15, 0.3).translate(x + 14, y + 83, z + 2.05));
+/**
+ * Where the blank disks stand (mm, the machine's frame): one between each pair of coil turns, face out, every lane
+ * full. The disks themselves are the floppy kit's, placed by the room (like the tower's).
+ */
+export function vendingBlanks(): THREE.Matrix4[] {
+  const out: THREE.Matrix4[] = [], lane = (XC - X0 - 60) / LANES, depth = VEND.d - 140, zf = FZ - 40, pitch = (depth - 30) / TURNS;
+  let seed = 7;
+  const r = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let s = 0; s < SHELVES; s++) for (let l = 0; l < LANES; l++) for (let k = 0; k < TURNS; k++) {
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler((r() - 0.5) * 0.06, (r() - 0.5) * 0.08, (r() - 0.5) * 0.04));
+    out.push(new THREE.Matrix4().compose(v3(X0 + 40 + (l + 0.5) * lane, Y_SHELF0 + s * SHELF_PITCH + 12 + 47, zf - 6 - (k + 0.5) * pitch), q, v3(1, 1, 1)));
+  }
+  return out;
 }
 
 /** Seven-segment style text on a dark red window, drawn to a canvas (the display reads SOON). */
@@ -62,7 +72,7 @@ export class Vending {
     this.group.add(P.build(machineMaterials(t, gu, 'clear', new THREE.Texture())));
     // the COMING SOON card taped inside the glass, a little crooked (01, 02)
     const card = new THREE.Mesh(new THREE.PlaneGeometry(240, 170), new THREE.MeshStandardMaterial({ map: cardTexture(), roughness: 0.8 }));
-    card.position.set(-60, Y_SHELF0 + 3 * SHELF_PITCH + 100, FZ - 14);
+    card.position.set(-60, Y_SHELF0 + 3 * SHELF_PITCH + 96, FZ - 14);
     card.rotation.z = 0.12;
     const tape = new THREE.MeshStandardMaterial({ color: srgb(214, 196, 150), roughness: 0.6, transparent: true, opacity: 0.85 });
     for (const [x, y, r] of [[-110, 78, 0.7], [112, 76, -0.6], [-112, -80, -0.7], [110, -78, 0.6]] as const) {
@@ -114,14 +124,12 @@ function shelves(P: Parts) {
     for (let l = 0; l < LANES; l++) {
       const x = X0 + 40 + (l + 0.5) * lane;
       // the spiral: steel wire round the lane, its free end curling out at the front (06)
-      const turns = 7, r = 44, pts: THREE.Vector3[] = [];
+      const turns = TURNS, r = 52, pts: THREE.Vector3[] = [];
       for (let i = 0; i <= turns * 24; i++) {
         const a = (i / 24) * Math.PI * 2;
         pts.push(v3(x + Math.sin(a) * r, y + 10 + r * 0.9 + Math.cos(a) * r * 0.9, zf - 6 - (i / (turns * 24)) * (depth - 30)));
       }
       P.add('steel', new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), turns * 40, 2.2, 6, false));
-      // disks standing in the turns
-      for (let k = 0; k < 6; k++) standingBlank(P, x, y + 8, zf - 30 - k * ((depth - 50) / 6));
       // lane divider and the geared motor at the back (04, 06)
       P.add('alu', cyl(16, 44, 20).rotateX(Math.PI / 2).translate(x, y + 52, -FZ + 70));
       P.add('cream', cyl(14, 10, 20).rotateX(Math.PI / 2).translate(x, y + 52, -FZ + 98));

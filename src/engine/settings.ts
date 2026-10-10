@@ -13,7 +13,8 @@ export const FREE = params.has('free');
 export const settings = {
   adaptiveResolution: !VERIFY,
   frameRate: RENDERER.pixelRatio.targetFps,
-  pixelRatio: Math.min(window.devicePixelRatio || 1, QUALITY === 'low' ? RENDERER.pixelRatio.liteCap : RENDERER.pixelRatio.maxCap),
+  // phones render at up to 2× (a 1× canvas on a 3× screen reads as blurry); elsewhere the lite cap applies
+  pixelRatio: Math.min(window.devicePixelRatio || 1, PHONE ? 2 : QUALITY === 'low' ? RENDERER.pixelRatio.liteCap : RENDERER.pixelRatio.maxCap),
   spin: SPIN.idle,
   parallax: 1,
   volume: 0.8,

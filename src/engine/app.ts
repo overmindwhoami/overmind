@@ -9,7 +9,7 @@ import { LABEL_FONTS } from './floppy/labels';
 import { Composer } from './composer';
 import { Lighting } from './lighting';
 import { Resolution } from './resolution';
-import { FREE, QUALITY, VERIFY, settings } from './settings';
+import { FREE, PHONE, QUALITY, VERIFY, settings } from './settings';
 import { Tracker, type TrackerContent } from '../hud/tracker';
 import { clientOf, preload, sourceFor } from '../hud/source';
 import { Sound } from '../audio/sound';
@@ -17,6 +17,9 @@ import { SimArchive, fmtDisk, fmtTime, type Archive } from '../archive/sim';
 import { sourceName } from '../archive/types';
 import { BLUR_EVENT, FOCUS_EVENT, READ_EVENT } from '../ui/indexNav';
 import { WriteLog } from '../ui/writeLog';
+import { Story, type Line } from '../ui/story';
+import { Walkthrough, type Rect, type TourStop } from '../ui/walkthrough';
+import spec from './tower-spec.json';
 
 const INTERFACE = 'a, button, .lil-gui';
 /** Vertical FOV for an aspect ratio: the design FOV, widened on portrait screens so enough shows horizontally. */
@@ -24,7 +27,31 @@ const fovFor = (aspect: number) => Math.max(CAMERA.fov, (2 * Math.atan(Math.tan(
 const wrapAngle = (a: number) => ((((a % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
 const MACHINE_SATURATION = 0.72; // mild colour, only inside the machine
 const FLIGHT = 1.6; // seconds for the camera to fly between places
-const INTRO = 3.4; // the first pull back from the live disk to the room
+const SEEN = 'overmind.seen';
+/**
+ * The walkthrough, in the Overmind's own voice: one part of the scene at a time, framed by the instrument. Short lines,
+ * a beat each; the camera moves only when the part is elsewhere (the lineage below, the room).
+ */
+type TourTarget = 'live' | 'label' | 'log' | 'stack' | 'clock' | 'reader';
+const TOUR: (TourStop & { where: 'tower' | 'stack' | 'room'; target: TourTarget; wake?: 'clock' | 'computer' })[] = [
+  { title: 'the live disk', line: 'this is me, writing. one thing a minute, onto this disk.', where: 'tower', target: 'live' },
+  { title: 'its label', line: "where it came from: the disk it forked from, and its fingerprint.", where: 'tower', target: 'label' },
+  { title: 'the write log', line: 'every save lands here with my note on why i kept it. ninety, and the disk is full.', where: 'tower', target: 'log' },
+  { title: 'the lineage', line: 'every disk under it is full and sealed. anyone can check nobody changed them. not even me.', where: 'room', target: 'stack' },
+  { title: 'q-day', line: "the red clock is my guess at q-day: the day quantum computers break today's encryption.", where: 'room', target: 'clock', wake: 'clock' },
+  { title: 'the reader', line: "put any disk in that machine and i'll read it to you. ask me to check one, and i'll prove it.", where: 'room', target: 'reader', wake: 'computer' },
+];
+const FACE_MM = spec.disk.t / 2;
+const TOUCH = window.matchMedia('(hover: none)').matches;
+const WORDS = {
+  thesis: 'The Overmind is writing the record that survives Q-Day.',
+  minute: 'Every minute, it decides what makes it through.',
+  qday: "Q-Day: the day quantum computers break today's encryption. The red clock is its guess.",
+  tower: TOUCH ? 'Tap a disk to look inside, or' : 'Hover a disk to look inside, or',
+  room: TOUCH ? 'Tap a name to go there, or' : 'Click anything in the room, or',
+};
+const SETTLED_TOWER: Line[] = [{ text: WORDS.thesis }, { text: WORDS.minute }, { text: WORDS.tower, kind: 'hint', check: true, tour: true }];
+const SETTLED_ROOM: Line[] = [{ text: WORDS.thesis }, { text: WORDS.qday }, { text: WORDS.room, kind: 'hint', check: true, tour: true }];
 /** The DIRTYPXLS treatment at the places (dirty.ts): off for now, the room shows as it is. */
 const DITHER = false;
 const ease = (t: number) => t * t * (3 - 2 * t);
@@ -107,7 +134,15 @@ export class App {
   private roomYaw = 0;
   private roomYawTarget = 0;
   private tags = new Map<PlaceName, HTMLButtonElement>();
-  private touchFirst = window.matchMedia('(hover: none)').matches;
+  private touchFirst = TOUCH;
+  /**
+   * The first visit, in three layers: `hold` on the live disk (what is this?), `wake` while the camera pulls back and
+   * the room's lights come up one group at a time, each with its line (why should I care?); then the room as usual,
+   * with "check a disk" for whoever wants proof. Any input moves it on.
+   */
+  private intro = { stage: 'off' as 'off' | 'on', i: 0, since: 0 };
+  private tour = new Walkthrough({ next: () => this.tourNext(), skip: () => this.finishIntro() }, () => this.reduced);
+  private story?: Story;
   /** In the room view: the place under the pointer. */
   private roomHover?: PlaceName;
   private roomLabel = document.querySelector<HTMLElement>('[data-room-label]');
@@ -119,7 +154,10 @@ export class App {
 
   constructor(archive: Archive = new SimArchive()) {
     this.archive = archive;
-    this.resolution = new Resolution(settings.pixelRatio, RENDERER.pixelRatio.min, RENDERER.pixelRatio.start);
+    // phones start sharp and never drop below 1.5× (the adaptive steps only trade between 1.5× and 2× there)
+    this.resolution = PHONE
+      ? new Resolution(settings.pixelRatio, Math.min(1.5, settings.pixelRatio), settings.pixelRatio)
+      : new Resolution(settings.pixelRatio, RENDERER.pixelRatio.min, RENDERER.pixelRatio.start);
     this.renderer = new THREE.WebGLRenderer({ antialias: RENDERER.antialias, powerPreference: RENDERER.powerPreference, stencil: RENDERER.stencil });
     this.renderer.setPixelRatio(this.pixelRatio());
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -139,6 +177,8 @@ export class App {
     this.composer = new Composer(this.renderer);
     this.sound = new Sound(document.querySelector<HTMLButtonElement>('[data-sound]'));
     this.tracker = new Tracker({ onLock: this.sound.lock, onTick: this.sound.tick, reduced: () => this.reduced });
+    const storyRoot = document.querySelector<HTMLElement>('[data-story]');
+    if (storyRoot) this.story = new Story(storyRoot, () => this.checkDisk(), () => this.reduced, () => this.startIntro());
     const logRoot = document.querySelector<HTMLElement>('[data-log]');
     if (logRoot) this.log = new WriteLog(logRoot, this.archive, () => this.reduced);
 
@@ -180,7 +220,13 @@ export class App {
     await this.room.build(this.tower.kit, this.tower.glassUniforms, async () => { progress(0.36 + (++built / 8) * 0.4, 'Furnishing the room'); await frame(); });
     this.scene.add(this.room.root);
     this.room.proxies.traverse((o) => o.layers.set(COLOUR_LAYER));
+    this.room.wakeable('computer', this.station.pc.group);
     this.room.clean(this.place, CLEAN_LAYER);
+    // a first visit (no link to a place, not seen lately) opens in the dark, on the live disk
+    const deep = window.location.hash.length > 1 && window.location.hash !== '#debug';
+    let seen = false;
+    try { seen = Date.now() - Number(localStorage.getItem(SEEN) ?? 0) < 30 * 86_400_000; } catch { /* storage blocked: treat as new */ }
+    if (!deep && !seen) for (const g of ['clock', 'computer', 'rest'] as const) this.room.light(g, 0, true);
     progress(0.8, 'Reading the lineage');
     await data;
     // a remote archive only knows the lineage now: take it as it is (no seal animation) and land on the live disk
@@ -201,8 +247,9 @@ export class App {
     requestAnimationFrame((t) => {
       this.previousTime = t;
       document.documentElement.classList.add('is-ready');
-      // the reveal: from the live disk being written, the camera pulls back to show the whole room
-      if (this.place === 'tower') this.go('room', this.reduced ? 0.01 : INTRO);
+      // first visit: the tower, out to the room, back in; returning: the tower straight away
+      if (this.place === 'tower' && this.room.wake.rest.value === 0) this.startIntro(); // first visit: the walkthrough
+      else if (this.place === 'tower') this.story?.set('tower', SETTLED_TOWER);
       requestAnimationFrame(this.loop);
     });
   }
@@ -219,6 +266,8 @@ export class App {
 
   update(dt: number) {
     this.elapsed += dt;
+    this.runIntro(dt);
+    this.story?.update();
     const t = this.elapsed, m = this.motionScale;
     this.spinBoost *= Math.exp(-dt * DECAY.inertia);
     if (this.isDragging) this.dragVelocity *= Math.exp(-dt * DECAY.dragHold);
@@ -291,7 +340,7 @@ export class App {
     this.roomHover = this.place === 'room' && this.flightT >= 1 && this.isPointerInside && !this.isOverInterface && !this.isTouch ? this.roomPick() : undefined;
     this.updateRoomLabel();
     this.updateTags();
-    if (this.station.reading || this.place !== 'tower' || this.flightT < 1) this.hover = undefined;
+    if (this.station.reading || this.place !== 'tower' || this.flightT < 1 || this.tour.active) this.hover = undefined;
     else if (this.focused) this.hover = this.focused;
     else {
       const picked = !this.isTouch && this.isPointerInside && !this.isOverInterface && this.pressDistance < SCROLL.tapSlop ? this.pick() : undefined;
@@ -415,8 +464,109 @@ export class App {
     return { rect: { x0, y0, x1, y1 }, kind: 'rise', live: { x: x1 - 6, y: y1 + 6 } };
   }
 
+  /* ---------------------------------------------------------------- the first visit: the walkthrough */
+  /** Starts (or replays) the walkthrough from its first stop. */
+  startIntro() {
+    if (this.station.reading) this.station.eject();
+    this.intro = { stage: 'on', i: 0, since: 0 };
+    document.documentElement.dataset.intro = 'on';
+    this.tour.start(TOUR.length);
+    this.enterStop(0);
+  }
+  private enterStop(i: number) {
+    const stop = TOUR[i];
+    this.intro.i = i; this.intro.since = 0;
+    const fly = (to: PlaceName, d: number) => { this.introFlight = true; this.go(to, this.reduced ? 0.01 : d); this.introFlight = false; };
+    if (stop.where === 'room') { if (this.place !== 'room') fly('room', 2.2); }
+    else {
+      if (this.place !== 'tower') fly('tower', 1.6);
+      // the lineage: the camera sinks a little so the sealed disks under the live one fill the view
+      this.cameraHeightTarget = this.tower.range.max - 0.1 - (stop.where === 'stack' ? 1.0 : 0);
+    }
+    if (stop.wake) this.room.light(stop.wake, 1);
+    this.tour.show(i, stop);
+  }
+  private tourNext() {
+    if (this.intro.stage === 'off') return;
+    if (this.intro.i + 1 >= TOUR.length) this.finishIntro(true);
+    else this.enterStop(this.intro.i + 1);
+  }
+  /** Ends the walkthrough (its last stop, skip, or going somewhere): lights up, words settled, the camera home on the tower. */
+  private finishIntro(done = false) {
+    if (this.intro.stage === 'off') return;
+    this.intro.stage = 'off';
+    this.tour.end();
+    delete document.documentElement.dataset.intro;
+    for (const g of ['clock', 'computer', 'rest'] as const) this.room.light(g, 1);
+    this.cameraHeightTarget = this.tower.range.max - 0.1;
+    if (this.place !== 'tower' && done) { this.introFlight = true; this.go('tower', this.reduced ? 0.01 : 1.8); this.introFlight = false; }
+    this.story?.set('tower', SETTLED_TOWER);
+    try { localStorage.setItem(SEEN, String(Date.now())); } catch { /* fine */ }
+  }
+  /** During the walkthrough a tap, a scroll, Enter or → moves to the next part; Esc ends it. Returns whether it was used. */
+  private introInput(key?: string) {
+    if (this.intro.stage === 'off') return false;
+    if (key === 'Escape') { this.finishIntro(); if (this.place !== 'tower') this.go('tower', 1.2); return true; }
+    if (key && !['Enter', 'ArrowRight', ' ', 'wheel'].includes(key)) return true; // other keys do nothing mid-walkthrough
+    this.tourNext();
+    return true;
+  }
+  /** Per frame: the frame follows its part; a stop moves on by itself once its line has typed and had a beat to land. */
+  private runIntro(dt: number) {
+    if (this.intro.stage === 'off') return;
+    const stop = TOUR[this.intro.i];
+    this.tour.update(this.tourRect(stop.target), dt);
+    if (this.tour.typingLeft > 0) return;
+    this.intro.since += dt;
+    if (this.intro.since > 1.6 + stop.line.length * 0.022) this.tourNext();
+  }
+
+  /** Where a part of the scene is on screen (CSS pixels). */
+  private tourRect(target: TourTarget): Rect | undefined {
+    const W = window.innerWidth, H = window.innerHeight, v = new THREE.Vector3(), m = new THREE.Matrix4();
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, ok = true;
+    const add = (p: THREE.Vector3) => {
+      v.copy(p).project(this.camera);
+      if (v.z > 1) { ok = false; return; }
+      const x = (v.x * 0.5 + 0.5) * W, y = (0.5 - v.y * 0.5) * H;
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    };
+    const box = (mat: THREE.Matrix4, hx: number, hy: number, hz: number, cx = 0, cy = 0, cz = 0) => {
+      for (let i = 0; i < 8; i++) add(new THREE.Vector3(cx + (i & 1 ? hx : -hx), cy + (i & 2 ? hy : -hy), cz + (i & 4 ? hz : -hz)).applyMatrix4(mat));
+    };
+    const disk = (n: number) => this.tower.worldMatrix({ slab: this.tower.slab(n), offset: 0 }, m);
+    const object = (o: THREE.Object3D) => {
+      const b = new THREE.Box3().setFromObject(o);
+      for (let i = 0; i < 8; i++) add(new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z));
+    };
+    const MMW = spec.mm;
+    if (target === 'live') box(disk(this.tower.count), 45 * MMW, 47 * MMW, FACE_MM * MMW);
+    else if (target === 'label') box(disk(this.tower.count), 35 * MMW, 27.8 * MMW, 0.1 * MMW, 0, -19.2 * MMW, FACE_MM * MMW);
+    else if (target === 'stack') { const b = this.room.hitBox('tower'); if (!b) return undefined; for (let i = 0; i < 8; i++) add(new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z)); }
+    else if (target === 'clock') object(this.room.clock.group);
+    else if (target === 'reader') object(this.station.pc.group);
+    else {
+      // the write log: its head, bar, status and the newest save
+      const els = ['[data-log-head]', '.log__bar', '.log__status', '.log__entry'].map((q) => document.querySelector(q)).filter((e): e is Element => !!e);
+      for (const e of els) { const r = e.getBoundingClientRect(); if (r.width && r.height) { x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top); x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom); } }
+    }
+    if (!ok || !Number.isFinite(x0)) return undefined;
+    return { left: x0, top: y0, width: x1 - x0, height: y1 - y0 };
+  }
+  private introFlight = false;
+
+  /** The proof, one click away: the newest sealed disk goes into the computer and CHECK runs on its screen. */
+  checkDisk() {
+    const n = this.archive.current().disk - 1;
+    if (n < 0) { this.announce('No disk has been sealed yet. The first seals after 90 saves.'); return; }
+    this.read(n, true);
+  }
+
   /** Fly to a place in the room (or home to the tower). Reading a disk ends first. */
   go(name: PlaceName, duration = FLIGHT) {
+    if (!this.introFlight) this.finishIntro(); // choosing somewhere ends the first visit's story
+    if (name === 'room' && this.intro.stage === 'off') this.story?.set('room', SETTLED_ROOM);
+    if (name === 'tower' && this.intro.stage === 'off') this.story?.set('tower', SETTLED_TOWER);
     if (name === this.place) return;
     this.flightDur = duration;
     if (this.isTouch && this.ready) navigator.vibrate?.(8); // a light tick on phones that have it
@@ -431,8 +581,8 @@ export class App {
     this.room.clean(name, CLEAN_LAYER);
     window.dispatchEvent(new Event('placechange')); // the menu marks where the camera is going
     const label = PLACES.find((p) => p.name === name)?.label;
-    this.announce(name === 'room' ? 'The room.' : name === 'tower' ? 'The tower: the lineage, newest disk on top.' : `${label}.`);
-    if (window.location.hash.slice(1) !== (name === 'room' ? '' : name)) history.replaceState(null, '', name === 'room' ? window.location.pathname + window.location.search : `#${name}`);
+    this.announce(name === 'room' ? 'The room.' : name === 'tower' ? 'overmind: the lineage, newest disk on top.' : `${label}.`);
+    if (window.location.hash.slice(1) !== (name === 'tower' ? '' : name)) history.replaceState(null, '', name === 'tower' ? window.location.pathname + window.location.search : `#${name}`);
   }
 
   /** The camera's flight: from where it was to the place's pose, along a shallow arc (home is a moving target). */
@@ -444,7 +594,7 @@ export class App {
     let pos: THREE.Vector3, look: THREE.Vector3, up = new THREE.Vector3(0, 1, 0), focus: number;
     if (this.place === 'tower') { pos = this.camera.position.clone(); look = this.lookAt.clone(); up = this.camera.up.clone(); focus = DRIFT.focusBase + settings.focus; }
     else if (this.place === 'terminal') { const r = this.station.readerCamera(this.camera); pos = r.pos; look = r.look; focus = r.distance; }
-    else { const v = this.room.view(this.place, this.camera, this.place === 'room' ? this.roomYaw : 0); pos = v.pos; look = v.look; focus = v.distance; }
+    else { const v = this.room.view(this.place, this.camera, this.place === 'room' ? this.roomYaw : 0); pos = v.pos; look = v.look; focus = v.distance; if ('up' in v && v.up) up = v.up; }
     if (this.place === 'room') pos.add(new THREE.Vector3(this.pointer.x * 0.9, this.pointer.y * 0.45, 0)); // a little parallax over the room
     const from = this.flightFrom, lift = from.pos.distanceTo(pos) * 0.12;
     this.camera.position.copy(from.pos).lerp(pos, e);
@@ -462,7 +612,7 @@ export class App {
   }
   /** Name tags over the room's places on touch screens (there is no hover to name them); tapping one goes there. */
   private updateTags() {
-    const show = this.touchFirst && this.place === 'room' && this.flightT > 0.85;
+    const show = this.touchFirst && this.place === 'room' && this.flightT > 0.85 && !this.tour.active;
     document.documentElement.classList.toggle('show-tags', show);
     if (!show) return;
     const root = document.querySelector<HTMLElement>('[data-room-tags]');
@@ -474,7 +624,7 @@ export class App {
         el = document.createElement('button');
         el.type = 'button';
         el.className = 'tag';
-        el.textContent = a.place === 'tower' ? 'the tower' : PLACES.find((p) => p.name === a.place)?.label ?? a.place;
+        el.textContent = a.place === 'tower' ? 'overmind' : PLACES.find((p) => p.name === a.place)?.label ?? a.place;
         const place = a.place;
         el.addEventListener('click', () => this.go(place));
         root.appendChild(el);
@@ -496,7 +646,7 @@ export class App {
     if (!el) return;
     el.hidden = !this.roomHover;
     if (!this.roomHover) return;
-    const name = this.roomHover === 'tower' ? 'the tower' : PLACES.find((p) => p.name === this.roomHover)?.label ?? '';
+    const name = this.roomHover === 'tower' ? 'overmind' : PLACES.find((p) => p.name === this.roomHover)?.label ?? '';
     if (el.textContent !== name) el.textContent = name;
     el.style.transform = `translate(${((this.pointerTarget.x + 1) / 2) * window.innerWidth + 18}px, ${((1 - this.pointerTarget.y) / 2) * window.innerHeight + 14}px)`;
   }
@@ -535,12 +685,12 @@ export class App {
   blur() { this.focused = undefined; }
 
   /** Lift a disk out of the stack and read it in the machine. */
-  read(n: number) {
+  read(n: number, check = false) {
     if (!this.ready || this.station.reading || n > this.tower.count) return;
     if (this.place !== 'tower') this.go('tower');
     const slab = this.tower.slab(n);
     this.focused = undefined;
-    this.station.insert(n, this.tower.worldMatrix({ slab, offset: 0 }, new THREE.Matrix4()));
+    this.station.insert(n, this.tower.worldMatrix({ slab, offset: 0 }, new THREE.Matrix4()), { check });
     this.tower.lifted = n;
     this.sound.select(Math.max(-1, Math.min(1, (slab.box.center.x / 0.8) * 0.5)));
     this.announce(`${fmtDisk(n)} is in the drive.`);
@@ -588,7 +738,7 @@ export class App {
   }
 
   onWheel = (e: { deltaY: number }) => {
-    if (!this.ready) return;
+    if (!this.ready || this.introInput('wheel')) return;
     if (this.station.reading) { this.station.wheel(e.deltaY); return; }
     if (this.place === 'room' && e.deltaY > 0) { this.go('tower'); return; }
     if (this.place !== 'tower' || this.flightT < 1) return; // no scrolling the lineage mid-flight
@@ -596,7 +746,7 @@ export class App {
   };
 
   onKeyDown = (e: { key: string; preventDefault?: () => void }) => {
-    if (!this.ready) return;
+    if (!this.ready || (e.key !== 'Tab' && e.key !== 'Shift' && this.introInput(e.key))) return;
     if (e.key === 'm' || e.key === 'M') { this.sound.toggle(!this.sound.enabled); return; }
     if (this.station.reading) { if (this.station.key(e.key)) e.preventDefault?.(); return; }
     if (this.place !== 'tower') { if (e.key === 'Escape' && this.place !== 'room') this.go('room'); return; }
@@ -610,6 +760,7 @@ export class App {
   onPointerDown = (e: { clientX: number; clientY: number; pointerType: string; target: EventTarget | null; timeStamp: number; type: string }) => {
     if (!this.ready) return;
     if (e.target instanceof Element && e.target.closest(INTERFACE)) return;
+    if (this.introInput()) return;
     this.isTouch = e.pointerType !== 'mouse';
     this.pressDistance = 0;
     this.pressed = this.hover;

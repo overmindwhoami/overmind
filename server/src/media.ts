@@ -30,6 +30,8 @@ const s3 = bucket ? new S3Client({
   forcePathStyle: process.env.AWS_S3_FORCE_PATH_STYLE === 'true',
 }) : undefined;
 export const storage = bucket ? `bucket ${bucket}` : `disk ${LOCAL}`;
+/** `clips: false` makes stills only (the backlog writes too fast for 8 s video loops to keep up). */
+export const mediaOptions = { clips: true };
 
 async function put(key: string, body: Buffer, type: string) {
   if (s3) await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: type, CacheControl: 'public, max-age=31536000, immutable' }));
@@ -109,7 +111,7 @@ async function build(item: Item): Promise<{ media?: string; clip?: string }> {
       if (mp4) {
         const src = base + encodeURIComponent(mp4.name), length = Number(mp4.length ?? 120);
         const start = Math.max(5, Math.min(length * 0.3, length - 12));
-        if (await clip(src, join(work, 'c.mp4'), start)) { await put(`${safe}.mp4`, await readFile(join(work, 'c.mp4')), 'video/mp4'); out.clip = `/media/${safe}.mp4`; }
+        if (mediaOptions.clips && await clip(src, join(work, 'c.mp4'), start)) { await put(`${safe}.mp4`, await readFile(join(work, 'c.mp4')), 'video/mp4'); out.clip = `/media/${safe}.mp4`; }
         await put(`${safe}.jpg`, await still(await frame(src, start + 2, join(work, 'f.png'))), 'image/jpeg');
         out.media = `/media/${safe}.jpg`;
       }
@@ -119,7 +121,7 @@ async function build(item: Item): Promise<{ media?: string; clip?: string }> {
       if (gif && Number(gif.size ?? 0) < 6_000_000) {
         const src = join(work, 'a.gif');
         await writeFile(src, await fetchBytes(base + encodeURIComponent(gif.name)));
-        if (await clip(src, join(work, 'c.mp4'), 0, true)) { await put(`${safe}.mp4`, await readFile(join(work, 'c.mp4')), 'video/mp4'); out.clip = `/media/${safe}.mp4`; }
+        if (mediaOptions.clips && await clip(src, join(work, 'c.mp4'), 0, true)) { await put(`${safe}.mp4`, await readFile(join(work, 'c.mp4')), 'video/mp4'); out.clip = `/media/${safe}.mp4`; }
         await put(`${safe}.jpg`, await still(await readFile(src), 0.35, true), 'image/jpeg');
         out.media = `/media/${safe}.jpg`;
       } else if (shot) {
@@ -147,6 +149,7 @@ const queue: { item: Item; done: (m: { media?: string; clip?: string }) => void 
 let busy = false;
 /** Queues media for an item; `done` runs with whatever could be made (possibly nothing). */
 export function enqueue(item: Item, done: (m: { media?: string; clip?: string }) => void) {
+  if (queue.length > 150) { done({}); return; } // far behind (the backlog): this one goes without a picture
   queue.push({ item, done });
   if (busy) return;
   busy = true;

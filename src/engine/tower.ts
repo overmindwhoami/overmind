@@ -29,6 +29,8 @@ const SETTLE = 1.4; // seconds for a sealed disk to drop into place
 const ARRIVE = 1.1; // seconds for a fresh disk to descend into the hover pose
 const WRITE = 0.8; // seconds of the small dip the live disk makes as each slot is written
 const CORE_CLEAR = 0.5; // core lights keep at least this far (vertically) from the live disk
+const LIVE_REACH = 0.47; // the live disk's footprint round the tower's axis (its half width, with the wobble)
+const LIVE_GAP = 0.035; // clear air between the live disk's lowest edge and the stack under it
 /** The live disk's resting pose above the stack (world space): forward offset, tilt toward the viewer, turn. */
 export const LIVE_POSE = { z: 0.04, pitch: -0.45, yaw: 0, sheen: 0.4 };
 const _ray = new THREE.Vector3();
@@ -105,7 +107,33 @@ export class Tower {
   }
 
   /** Lowest and highest camera heights worth visiting: genesis up to the live disk. */
-  get range() { return { min: this.slabs[0].y, max: this.landing(this.sealed).y + HOVER + 0.08 }; }
+  get range() { return { min: this.slabs[0].y, max: this.liveY() + 0.13 }; }
+
+  /**
+   * Where the live disk floats: HOVER above its landing place, or higher if that would cut into the stack. The newest
+   * disks lean in toward the axis and the live disk stands nearly upright on it, so its lower half can reach down into
+   * them; the stack also turns under it. So: the highest point of the top disks' faces anywhere within the live disk's
+   * reach of the axis (whatever the turn), plus the live disk's own half height, plus a little air.
+   */
+  private liveFloor = { n: -1, y: 0 };
+  liveY() {
+    const n = this.sealed, base = this.landing(n).y + HOVER;
+    if (this.liveFloor.n === n) return Math.max(base, this.liveFloor.y);
+    let top = -Infinity;
+    const p = new THREE.Vector3(), [hx, hy, hz] = HALF;
+    for (let i = Math.max(0, n - 14); i < n; i++) {
+      const m = this.slabs[i].matrix;
+      for (const sz of [-1, 1]) for (let a = 0; a <= 10; a++) for (let b = 0; b <= 10; b++) {
+        p.set((a / 5 - 1) * hx, (b / 5 - 1) * hy, sz * hz).applyMatrix4(m);
+        if (Math.hypot(p.x, p.z) < LIVE_REACH && p.y > top) top = p.y;
+      }
+    }
+    // the live disk's half height in its pose (yaw doesn't change it; the pitch and its slow sway do)
+    const pitch = Math.abs(LIVE_POSE.pitch) + 0.02;
+    const half = hy * Math.cos(pitch) + hz * Math.sin(pitch);
+    this.liveFloor = { n, y: top === -Infinity ? base : top + half + LIVE_GAP };
+    return Math.max(base, this.liveFloor.y);
+  }
   get count() { return this.sealed; }
   private landing(n: number) { return this.slabs[Math.min(n, this.slabs.length - 1)]; }
 
@@ -150,7 +178,7 @@ export class Tower {
     this.glassUniforms.uEdgeGlow.value = settings.edgeGlow;
     this.glassUniforms.uGlassOpacity.value = settings.glassOpacity;
     // the core lights glow inside the stack; one passing through the hovering live disk would put a hot spot on its face
-    const liveY = this.landing(this.sealed).y + HOVER;
+    const liveY = this.liveY();
     this.coreLights.forEach((l, i) => {
       const y = height + (i - 1) * LIGHTS.core.verticalSpacing;
       l.intensity = settings.coreIntensity;
@@ -187,15 +215,15 @@ export class Tower {
     this.liveProgress = written;
     this.writeT = Math.min(1, this.writeT + dt / WRITE);
     const dip = Math.sin(Math.PI * this.writeT) * (1 - this.writeT) * 0.05;
-    const land = this.landing(this.sealed);
+    const hoverY = this.liveY() + 0.05; // the write dip (0.05) never takes it below the clear height
     const a = Math.max(0, this.arriveT);
     const world = new THREE.Matrix4().compose(
-      new THREE.Vector3(0, land.y + HOVER + (1 - easeOut(a)) * 1.4 + Math.sin(this.turn * 0.7) * 0.006 - dip, LIVE_POSE.z),
+      new THREE.Vector3(0, hoverY + (1 - easeOut(a)) * 1.4 + Math.sin(this.turn * 0.7) * 0.006 - dip, LIVE_POSE.z),
       new THREE.Quaternion().setFromEuler(new THREE.Euler(LIVE_POSE.pitch + Math.sin(this.turn * 0.31) * 0.02, LIVE_POSE.yaw + Math.sin(this.turn * 0.17) * 0.1, 0, 'YXZ')),
       new THREE.Vector3(1, 1, 1));
     this.live.matrix.copy(world).premultiply(this.tmp.copy(this.group.matrixWorld).invert());
     const pos = new THREE.Vector3().setFromMatrixPosition(this.live.matrix);
-    this.live.index = this.sealed; this.live.y = land.y + HOVER; this.live.box.center.copy(pos);
+    this.live.index = this.sealed; this.live.y = hoverY; this.live.box.center.copy(pos);
     this.live.matrix.extractBasis(this.live.box.axes[0], this.live.box.axes[1], this.live.box.axes[2]);
     const liveRec = this.record(this.sealed, { live: true });
     if (this.arriveT > 0 && this.lifted !== this.sealed) entries.push({ rec: liveRec, matrix: this.live.matrix, cell: this.cellFor(this.sealed, liveRec, repaint) });

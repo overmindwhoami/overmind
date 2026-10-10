@@ -1,10 +1,13 @@
 @import '../design-system/tokens.css';
 
+@font-face { font-family: 'PP NeueBit'; src: url('/fonts/PPNeueBit-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'PP NeueBit'; src: url('/fonts/PPNeueBit-Bold.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+
 *, ::before, ::after { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--color-ground); overscroll-behavior: none; }
 body { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
 button, a { touch-action: manipulation; }
-body { color: var(--color-text-primary); font-family: var(--font-sans); font-size: var(--text-ui); }
+body { color: var(--color-text-primary); font-family: var(--font-sans); font-size: var(--text-ui); line-height: var(--leading-paragraph); -webkit-font-smoothing: antialiased; }
 
 .title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -17,7 +20,7 @@ body { color: var(--color-text-primary); font-family: var(--font-sans); font-siz
   transition: opacity 900ms var(--ease-expo-out), visibility 0s 900ms; pointer-events: none;
 }
 .is-ready .loader { opacity: 0; visibility: hidden; }
-.loader__mark { margin: 0; font-weight: 600; font-size: 15px; letter-spacing: 0.32em; animation: loader-breathe 2.4s ease-in-out infinite alternate; }
+.loader__mark { margin: 0; font-weight: 700; font-size: var(--text-display); line-height: 1; letter-spacing: 0.08em; animation: loader-breathe 2.4s ease-in-out infinite alternate; }
 @keyframes loader-breathe { from { opacity: 0.55; } to { opacity: 1; } }
 .loader__bar { position: relative; width: min(220px, 60vw); height: 1px; overflow: hidden; background: rgb(242 242 242 / 16%); }
 .loader__bar span { position: absolute; inset: 0; background: var(--color-text-primary); transform: scaleX(var(--p, 0)); transform-origin: 0 50%; transition: transform 420ms var(--ease-expo-out); }
@@ -26,7 +29,7 @@ body { color: var(--color-text-primary); font-family: var(--font-sans); font-siz
   animation: loader-glint 1.3s linear infinite; will-change: transform;
 }
 @keyframes loader-glint { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
-.loader__step { margin: 0; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-text-secondary); }
+.loader__step { margin: 0; font-family: var(--font-mono); font-size: var(--text-ui); letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-text-secondary); }
 @media (prefers-reduced-motion: reduce) { .loader__mark, .loader__bar::after { animation: none; } }
 
 /* Name tags over the room's places (touch screens) */
@@ -35,7 +38,7 @@ body { color: var(--color-text-primary); font-family: var(--font-sans); font-siz
 .tag {
   position: absolute; top: 0; left: 0; padding: 7px 11px; border: 1px solid rgb(242 242 242 / 22%); border-radius: 999px;
   background: rgb(10 10 10 / 62%); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  color: var(--color-text-primary); font: 500 12px/1 var(--font-sans); letter-spacing: var(--tracking-ui); white-space: nowrap;
+  color: var(--color-text-primary); font: 400 var(--text-ui)/1 var(--font-sans); letter-spacing: var(--tracking-ui); white-space: nowrap;
   pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
 .show-tags .tag { pointer-events: auto; }
@@ -61,7 +64,7 @@ html:not(.show-tags) .tag { pointer-events: none; }
 .chrome > a { color: inherit; text-decoration: none; }
 .chrome > a:focus-visible { outline: 1px solid; outline-offset: 6px; }
 
-.logo { grid-area: 1 / 1; place-self: start; height: var(--space-row); line-height: var(--space-row); font-weight: 600; font-size: 13px; letter-spacing: 0.22em; }
+.logo { grid-area: 1 / 1; place-self: start; height: var(--space-row); line-height: var(--space-row); font-weight: 700; font-size: var(--text-lead); letter-spacing: 0.1em; }
 .menu { grid-area: 1 / 2; place-self: start end; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 22px; max-width: 60vw; letter-spacing: var(--tracking-ui); }
 .menu__item { pointer-events: auto; color: inherit; opacity: 0.62; transition: opacity var(--dur-ui); }
 .menu__item:hover, .menu__item:focus-visible, .menu__item[aria-current='true'] { opacity: 1; }
@@ -75,6 +78,85 @@ html:not(.show-tags) .tag { pointer-events: none; }
 /* away from the room and the tower: the copy and the write log step back */
 html:not([data-place='tower']):not([data-place='room']) .copy, html:not([data-place='tower']):not([data-place='room']) .log { opacity: 0; pointer-events: none; transition: opacity var(--dur-ui); }
 html[data-place='room'] .on-tower, html:not([data-place='room']) .on-room { display: none; }
+/* The story in the corner (the first visit's words, then the room's): it takes the copy's place */
+.story {
+  grid-area: 3 / 1; align-self: end; max-width: 560px; margin: 0; font-size: var(--text-lead); letter-spacing: var(--tracking-ui); line-height: var(--leading-lead); display: none;
+  text-shadow: 0 0 14px rgb(0 0 0 / 95%), 0 0 3px rgb(0 0 0 / 90%); /* legible over a bright disk */
+}
+html[data-place='room'] .story, html[data-place='tower'] .story, html[data-intro] .story { display: block; }
+html[data-place='room'] .copy, html[data-place='tower'] .copy, html[data-intro] .copy, html[data-intro] .back { display: none; }
+.is-reading .story { opacity: 0; transition: opacity var(--dur-ui); }
+.story__line { margin: 0 0 8px; transition: opacity 600ms var(--ease-expo-out), transform 600ms var(--ease-expo-out); }
+.story__line.is-new { animation: story-in 900ms var(--ease-expo-out) both; }
+.story__line.is-leaving { opacity: 0; transform: translateY(-6px); }
+@keyframes story-in { from { opacity: 0; transform: translateY(8px); } }
+.story__line--voice { font-family: var(--font-mono); color: rgb(242 242 242 / 82%); }
+.story__line--voice::before { content: '> '; }
+.story__line--voice.is-typing::after { content: '▍'; margin-left: 1px; animation: log-blink 0.8s steps(2, jump-none) infinite; }
+.story__line--hint { color: var(--color-text-secondary); }
+.story__check { padding: 0; border: 0; background: none; color: var(--color-text-primary); font: inherit; letter-spacing: inherit; cursor: pointer; pointer-events: auto; }
+.story__check:focus-visible { outline: 1px solid; outline-offset: 4px; }
+@media (max-width: 640px) { .story { max-width: none; margin-bottom: calc(66px + env(safe-area-inset-bottom, 0px)); } .story__line { margin-bottom: 6px; } }
+@media (prefers-reduced-motion: reduce) { .story__line.is-new { animation: none; } .story__line--voice.is-typing::after { animation: none; } }
+/* The walkthrough (src/ui/walkthrough.ts): the instrument's frame on one part, the rest dimmed, the Overmind's line */
+.tour { position: fixed; inset: 0; z-index: 4; display: none; pointer-events: none; }
+html[data-tour] .tour { display: block; }
+html[data-tour] .story, html[data-tour] .tags { display: none; }
+.tour__frame {
+  position: absolute; top: 0; left: 0; will-change: transform, width, height;
+  box-shadow: 0 0 0 200vmax var(--color-tour-shade); transition: box-shadow 500ms;
+}
+.tour.is-lost .tour__frame { box-shadow: 0 0 0 200vmax rgb(0 0 0 / 22%); }
+.tour.is-lost .tour__corner, .tour.is-lost .tour__tag, .tour.is-lost .tour__size, .tour.is-lost .tour__lines { opacity: 0; }
+.tour__corner { --dx: -1; --dy: -1; position: absolute; width: 18px; height: 18px; border: 0 solid var(--color-hud-ink); filter: drop-shadow(0 0 1px var(--color-hud-under-stroke)); transition: opacity 200ms; }
+.tour__corner--tl { top: -1px; left: -1px; border-top-width: 1px; border-left-width: 1px; }
+.tour__corner--tr { --dx: 1; top: -1px; right: -1px; border-top-width: 1px; border-right-width: 1px; }
+.tour__corner--bl { --dy: 1; bottom: -1px; left: -1px; border-bottom-width: 1px; border-left-width: 1px; }
+.tour__corner--br { --dx: 1; --dy: 1; bottom: -1px; right: -1px; border-bottom-width: 1px; border-right-width: 1px; }
+/* lock-on, as the instrument does it: a stepped pop in from 1.25× and a 20 Hz strobe */
+.tour__frame.is-locking .tour__corner { animation: tour-pop 140ms steps(3, end) both, tour-strobe 150ms steps(1, end) 2; }
+@keyframes tour-pop { from { translate: calc(var(--dx) * 16px) calc(var(--dy) * 16px); } to { translate: 0 0; } }
+@keyframes tour-strobe { 0% { opacity: 1; } 34% { opacity: 0.12; } 67% { opacity: 1; } }
+.tour__tag, .tour__size { position: absolute; white-space: nowrap; font-family: var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; text-shadow: 0 0 3px #000, 0 0 10px #000; transition: opacity 200ms; }
+.tour__tag { left: -1px; bottom: calc(100% + 8px); font-size: var(--text-ui); line-height: 1; color: var(--color-hud-ink); }
+.tour__tag::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 9px; background: currentColor; vertical-align: 2px; }
+.tour__size { right: -1px; top: calc(100% + 8px); font-size: 14px; line-height: 1; color: var(--color-text-secondary); }
+.tour__frame.is-locking .tour__tag { animation: tour-strobe 150ms steps(1, end) 2; }
+.tour__lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; transition: opacity 200ms; }
+.tour__leader, .tour__under { fill: none; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.tour__leader { stroke: var(--color-hud-line); stroke-width: 1; }
+.tour__under { stroke: var(--color-hud-under-stroke); stroke-width: 3; }
+.tour__leader.is-drawn, .tour__under.is-drawn { animation: tour-draw 360ms var(--ease-expo-out) 120ms both; }
+@keyframes tour-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.tour__card {
+  position: absolute; top: 0; left: 0; width: min(372px, calc(100vw - 48px)); pointer-events: auto;
+  text-shadow: 0 0 14px rgb(0 0 0 / 95%), 0 0 3px rgb(0 0 0 / 90%);
+}
+.tour__card.is-locking { animation: tour-in 520ms var(--ease-expo-out) both; }
+@keyframes tour-in { from { opacity: 0; translate: 0 8px; } }
+.tour__step { margin: 0 0 10px; font-family: var(--font-mono); font-size: var(--text-ui); line-height: 1; letter-spacing: 0.04em; white-space: pre; color: var(--color-text-secondary); }
+.tour__line { margin: 0; min-height: calc(var(--leading-lead) * 3); font-size: var(--text-lead); line-height: var(--leading-lead); color: var(--color-text-primary); }
+.tour__line.is-typing::after { content: '▍'; margin-left: 1px; animation: log-blink 0.8s steps(2, jump-none) infinite; }
+.tour__foot { display: flex; align-items: center; gap: 20px; margin-top: 14px; }
+.tour__ticks { display: flex; gap: 3px; margin-right: auto; }
+.tour__ticks i { width: 14px; height: 3px; background: rgb(242 242 242 / 18%); }
+.tour__ticks i.is-done { background: var(--color-text-primary); }
+.tour__btn {
+  padding: 8px 0; border: 0; background: none; color: var(--color-text-secondary); cursor: pointer;
+  font: inherit; font-size: var(--text-ui); letter-spacing: 0.02em; text-shadow: inherit;
+}
+.tour__btn--next { color: var(--color-text-primary); }
+.tour__btn:hover, .tour__btn:focus-visible { color: var(--color-text-primary); }
+.tour__btn:focus-visible { outline: 1px solid; outline-offset: 4px; }
+.tour.is-phone .tour__lines, .tour.no-leader .tour__lines { display: none; }
+.tour.is-phone .tour__card { width: calc(100vw - 32px); }
+.tour.is-phone .tour__line { min-height: calc(var(--leading-lead) * 3); }
+@media (prefers-reduced-motion: reduce) {
+  .tour__frame.is-locking .tour__corner, .tour__frame.is-locking .tour__tag, .tour__card.is-locking, .tour__leader.is-drawn, .tour__under.is-drawn { animation: none; stroke-dashoffset: 0; }
+  .tour__line.is-typing::after { animation: none; }
+}
+.story__tour { color: var(--color-text-secondary); }
+
 /* in the room view the write log is a slim strip: the disk, its progress, the newest save's title */
 html[data-place='room'] .log { align-self: start; margin-top: 18px; }
 html[data-place='room'] .log__watch, html[data-place='room'] .log__entry + .log__entry,
@@ -82,7 +164,7 @@ html[data-place='room'] .log__note, html[data-place='room'] .log__meta { display
 /* the room view: the name of what's under the pointer */
 .room-label {
   position: fixed; top: 0; left: 0; z-index: 2; margin: 0; padding: 3px 7px; background: rgba(0, 0, 0, 0.6);
-  font-size: 12px; letter-spacing: var(--tracking-ui); white-space: nowrap; pointer-events: none;
+  font-size: var(--text-ui); letter-spacing: var(--tracking-ui); white-space: nowrap; pointer-events: none;
 }
 .menu-toggle, .menu__item--room { display: none; }
 /* Phones: the places become a bottom bar, like an app's tabs; the room is the first tab */
@@ -97,7 +179,7 @@ html[data-place='room'] .log__note, html[data-place='room'] .log__meta { display
   .menu::-webkit-scrollbar { display: none; }
   .menu__item, .menu__item--room {
     display: flex; flex: 1 0 auto; align-items: center; justify-content: center; min-height: 44px; padding: 0 9px; border-radius: 14px;
-    font-size: 12px; opacity: 0.66; transition: opacity var(--dur-ui), background var(--dur-ui);
+    font-size: var(--text-ui); opacity: 0.66; transition: opacity var(--dur-ui), background var(--dur-ui);
   }
   .menu__item::after { display: none; }
   .menu__item[aria-current='true'] { opacity: 1; background: rgb(242 242 242 / 12%); }
@@ -108,7 +190,7 @@ html[data-place='room'] .log__note, html[data-place='room'] .log__meta { display
   .sound { grid-area: 1 / 2; place-self: start end; margin: -2px -6px 0 0; }
   html[data-place='room'] .log__list { display: none; }
 }
-.copy { grid-area: 3 / 1; align-self: end; max-width: var(--measure-copy); margin: 0; line-height: var(--leading-paragraph); letter-spacing: var(--tracking-ui); text-wrap: balance; }
+.copy { grid-area: 3 / 1; align-self: end; max-width: 560px; margin: 0; font-size: var(--text-lead); line-height: var(--leading-lead); letter-spacing: var(--tracking-ui); text-wrap: balance; }
 
 .link { position: relative; color: inherit; text-decoration: none; }
 .link::after {
@@ -139,7 +221,7 @@ html[data-place='room'] .log__note, html[data-place='room'] .log__meta { display
   mask-image: linear-gradient(transparent, #000 28% 72%, transparent);
 }
 .index ul { margin: 0; padding: 0; list-style: none; transform: translateY(calc(var(--index-nav-active-offset) - var(--active, 0) * var(--space-row))); transition: transform var(--dur-ui) var(--ease-expo-out); }
-.index li { height: var(--space-row); font-size: 14px; line-height: var(--leading-list); letter-spacing: var(--tracking-ui); opacity: max(0.08, 0.5 - var(--distance, 6) * 0.07); transition: opacity var(--dur-row); }
+.index li { height: var(--space-row); font-size: var(--text-ui); line-height: var(--leading-list); letter-spacing: var(--tracking-ui); opacity: max(0.08, 0.5 - var(--distance, 6) * 0.07); transition: opacity var(--dur-row); }
 .index .is-active { opacity: 1; }
 .index a { position: relative; display: inline-block; color: inherit; text-decoration: none; }
 .index a::after { content: ''; position: absolute; left: 0; right: 0; bottom: 1px; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: 100% 50%; transition: transform var(--dur-ui) var(--ease-expo-out); }
@@ -168,21 +250,21 @@ html[data-place='room'] .log__note, html[data-place='room'] .log__meta { display
 .eject:focus-visible { outline: 1px solid; outline-offset: 4px; }
 .is-reading .copy { opacity: 0; transition: opacity var(--dur-ui); }
 .copy { transition: opacity var(--dur-ui); }
-@media (max-width: 640px) { .copy { margin-bottom: calc(66px + env(safe-area-inset-bottom, 0px)); font-size: 12px; } }
+@media (max-width: 640px) { .copy { margin-bottom: calc(66px + env(safe-area-inset-bottom, 0px)); } }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* The write log: what the Overmind is doing right now, beside the live disk (fades out down the lineage) */
 .log {
   --bar: 324px; --tick: 3.6px;
   grid-area: 2 / 1; align-self: center; width: var(--bar); margin: 0;
-  font-size: 12px; line-height: 17px; letter-spacing: var(--tracking-ui);
+  font-size: var(--text-ui); line-height: var(--leading-paragraph); letter-spacing: var(--tracking-ui);
   opacity: 0; visibility: hidden; transition: opacity var(--dur-ui), visibility 0s var(--dur-ui);
 }
 .is-live-view .log { opacity: 1; visibility: visible; transition: opacity var(--dur-ui), visibility 0s; }
 .is-live-view.is-hovering .log { opacity: 0.4; }
 .is-reading .log { opacity: 0; visibility: hidden; transition: opacity var(--dur-ui), visibility 0s var(--dur-ui); }
 .log p { margin: 0; }
-.log__head, .log__status, .log time { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+.log__head, .log__status, .log time { font-family: var(--font-mono); font-size: var(--text-ui); letter-spacing: 0.02em; text-transform: uppercase; }
 .log__head { display: flex; align-items: center; gap: 8px; color: var(--color-text-secondary); }
 .log__disk { color: var(--color-text-primary); }
 .log__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-primary); animation: log-blink 1.4s steps(2, jump-none) infinite; }
@@ -203,13 +285,13 @@ html[data-place='room'] .log__note, html[data-place='room'] .log__meta { display
 @keyframes log-enter { from { opacity: 0; transform: translateY(-8px); } }
 .log time { grid-column: 1; grid-row: 1; padding-top: 1px; color: var(--color-text-secondary); }
 .log__title, .log__meta, .log__note { grid-column: 2; }
-.log__title { font-weight: 500; font-size: 13px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.log__meta { color: var(--color-text-secondary); font-size: 11px; }
+.log__title { font-weight: 700; font-size: var(--text-ui); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.log__meta { color: var(--color-text-secondary); font-size: var(--text-ui); }
 .log__note { display: block; margin-top: 6px; quotes: none; color: rgb(242 242 242 / 82%); }
 .log__note.is-typing::after { content: '▍'; margin-left: 1px; animation: log-blink 0.8s steps(2, jump-none) infinite; }
 .log__entry + .log__entry .log__note, .log__entry + .log__entry .log__meta { display: none; }
 .log__entry + .log__entry .log__title { display: block; white-space: nowrap; text-overflow: ellipsis; font-weight: 400; }
-.log__entry--seal .log__title { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+.log__entry--seal .log__title { font-family: var(--font-mono); font-size: var(--text-ui); letter-spacing: 0.02em; text-transform: uppercase; }
 .log__entry--seal .log__meta { display: block !important; }
 
 @media (width <= 640px) {
@@ -231,13 +313,13 @@ html[data-place='room'] .log__note, html[data-place='room'] .log__meta { display
 .log__watch { margin-bottom: 22px; padding-bottom: 16px; border-bottom: 1px solid rgb(242 242 242 / 10%); }
 .log__watch[hidden], .log__move[hidden], .log__stats [hidden] { display: none; }
 .log__qday { display: flex; align-items: baseline; gap: 10px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; }
-.log__label { font-size: 11px; color: var(--color-text-secondary); }
-.log__date { font-size: 15px; letter-spacing: 0.04em; color: var(--color-text-primary); }
-.log__left { margin-left: auto; font-size: 11px; color: var(--color-text-secondary); }
-.log__move { margin-top: 4px !important; font-size: 12px; color: rgb(242 242 242 / 82%); }
+.log__label { font-size: var(--text-ui); color: var(--color-text-secondary); }
+.log__date { font-size: var(--text-lead); letter-spacing: 0.02em; color: var(--color-text-primary); }
+.log__left { margin-left: auto; font-size: var(--text-ui); color: var(--color-text-secondary); }
+.log__move { margin-top: 4px !important; font-size: var(--text-ui); color: rgb(242 242 242 / 82%); }
 .log__stats { margin: 10px 0 0; }
 .log__stats div { display: flex; justify-content: space-between; gap: 12px; }
-.log__stats dt, .log__stats dd { margin: 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; }
+.log__stats dt, .log__stats dd { margin: 0; font-family: var(--font-mono); font-size: var(--text-ui); letter-spacing: 0.02em; }
 .log__stats dt { color: var(--color-text-secondary); text-transform: uppercase; }
 .log__stats dd { color: var(--color-text-primary); text-align: right; }
 @media (width <= 640px) {

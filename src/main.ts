@@ -4,10 +4,10 @@ import { App } from './engine/app';
 import { SimArchive } from './archive/sim';
 import { RemoteArchive } from './archive/remote';
 
-const PLACE_NAMES = ['tower', 'docs', 'omd', 'terminal', 'launch', 'explorer', 'mint'] as const;
-type Place = (typeof PLACE_NAMES)[number] | 'room';
-/** The page opens on the whole room; a hash names a place (#tower, #omd, …). */
-const placeOf = (hash: string): Place => (PLACE_NAMES as readonly string[]).includes(hash.slice(1)) ? (hash.slice(1) as Place) : 'room';
+const PLACE_NAMES = ['room', 'docs', 'omd', 'terminal', 'launch', 'explorer', 'mint'] as const;
+type Place = (typeof PLACE_NAMES)[number] | 'tower';
+/** The page opens on the tower; a hash names a place (#room, #omd, …). */
+const placeOf = (hash: string): Place => (PLACE_NAMES as readonly string[]).includes(hash.slice(1)) ? (hash.slice(1) as Place) : 'tower';
 
 /** The menu: each item flies the camera to its place in the room; the back button, Esc and the logo return to the room. */
 function wirePlaces(app: App) {
@@ -22,12 +22,12 @@ function wirePlaces(app: App) {
     app.go(el.dataset.go as Place);
     mark();
   });
-  document.querySelector('.logo')?.addEventListener('click', (e) => { e.preventDefault(); app.go('room'); mark(); }); // never a reload
+  document.querySelector('.logo')?.addEventListener('click', (e) => { e.preventDefault(); app.go('tower'); mark(); }); // never a reload
   window.addEventListener('placechange', mark);
   window.addEventListener('wheel', () => queueMicrotask(mark), { passive: true });
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') queueMicrotask(mark); });
   window.addEventListener('hashchange', () => { app.go(placeOf(window.location.hash)); mark(); });
-  if (placeOf(window.location.hash) !== 'room') app.go(placeOf(window.location.hash));
+  if (placeOf(window.location.hash) !== 'tower') app.go(placeOf(window.location.hash));
   mark();
 }
 

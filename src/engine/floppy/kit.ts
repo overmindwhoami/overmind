@@ -22,6 +22,8 @@ export interface FloppyLook {
   protect: boolean; // write-protect window open
   hub: number; // hub angle, radians
   sheen?: number; // scales the metal parts' reflections for this replica (default 1)
+  /** A coloured shell (plastic or tinted glass) instead of the grey that `tint` gives: the room's stock of blanks. */
+  color?: THREE.Color;
 }
 export type FloppyRecord = LabelData & FloppyLook;
 
@@ -57,14 +59,14 @@ export function createKit(glassUniforms: GlassUniforms, { lite = false, renderer
   const I = new THREE.Matrix4();
   const glass = (r: FloppyRecord) => SHELLS[r.shell].glass;
   const parts: KitPart[] = [
-    { name: 'shell', geometry: shell, material: M.abs, place: (r, add) => { if (!glass(r)) add(I, grey(r.tint)); } },
+    { name: 'shell', geometry: shell, material: M.abs, place: (r, add) => { if (!glass(r)) add(I, r.color ?? grey(r.tint)); } },
     { name: 'shutter', geometry: toWorld(shutterGeometry()), material: M.steel, place: (r, add) => add(local(-r.open * SHUTTER.travel, 0), sheen(r)) },
     { name: 'hub', geometry: toWorld(hubGeometry()), material: M.hub, place: (r, add) => add(local(HUB.center[0], HUB.center[1], 0, r.hub), sheen(r)) },
     { name: 'media', geometry: toWorld(mediaGeometry()), material: M.media, place: (_r, add) => add(I) },
     { name: 'liner', geometry: toWorld(linerGeometry()), material: M.liner, place: (r, add) => { if (glass(r)) add(I); } },
     { name: 'slider', geometry: toWorld(sliderGeometry()), material: M.slider, place: (r, add) => add(local(SLIDER.x, r.protect ? SLIDER.yProtected : SLIDER.yEnabled)) },
     { name: 'label', geometry: toWorld(labelGeometry().geometry), material: M.label, cells: true, place: (r, add) => { if (r.label >= 0) add(I); } },
-    { name: 'glass', geometry: glassShell, material: M.glass, place: (r, add) => { if (glass(r)) add(I, grey(r.tint)); } },
+    { name: 'glass', geometry: glassShell, material: M.glass, place: (r, add) => { if (glass(r)) add(I, r.color ?? grey(r.tint)); } },
   ];
   performance.mark('kit:end');
   const textureList: THREE.Texture[] = [atlas.tex, ...Object.values(textures).flatMap((t) => (t instanceof THREE.Texture ? [t] : Object.values(t)))];

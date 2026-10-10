@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { roundRect } from './pcParts';
 
 /** The drum's order: a module passes through every character between its current one and its target. */
-export const DRUM = ' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$.,+-%:/';
+export const DRUM = ' $ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,+-%:/'; // $ right after blank: the $OMD row turns over at once
 const SPLIT = 2.2; // gap at the hinge line (mm)
 
 /** One canvas of glyph cells, all the same size and aspect as the module face that shows them. */

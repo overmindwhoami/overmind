@@ -15,17 +15,23 @@
   --color-hud-under-stroke: rgb(0 0 0 / 70%);
   --color-hud-flash: rgb(255 255 255 / 85%);
   --color-spotlight: rgb(0 0 0 / 78%);
+  --color-tour-shade: rgb(0 0 0 / 62%); /* the walkthrough's dim round the part it shows */
 
-  /* Type */
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
-  --text-ui: 14px;
+  /* Type: PP NeueBit (Pangram Pangram, bitmap) across the site's own text. Its grid is 28 pixels to the em, so it is
+     crisp at 28px and its multiples; 21px (three quarters of a pixel per dot) is the small size */
+  --font-bit: "PP NeueBit", ui-monospace, Menlo, monospace;
+  --font-sans: var(--font-bit);
+  --font-mono: var(--font-bit);
+  --text-ui: 21px;
+  --text-lead: 28px;
+  --text-display: 56px;
   --text-hud-title: 13px;
   --text-hud-label: 11px;
   --text-hud-micro: 8px;
   --leading-paragraph: 20px;
-  --leading-list: 22px;
-  --tracking-ui: -0.2px;
+  --leading-lead: 26px;
+  --leading-list: 24px;
+  --tracking-ui: 0;
 
   /* Space */
   --space-gutter: 24px;
@@ -55,7 +61,9 @@
 @media (width <= 640px) {
   :root {
     --space-gutter: 16px;
-    --text-ui: 13px;
+    --text-ui: 21px;
+    --text-lead: 21px;
+    --leading-lead: 20px;
     --measure-copy: 325px;
   }
 }

@@ -14,12 +14,20 @@ import { anchorPending, ensureDisk, events, round, SLOTS } from './archivist.js'
 import { explorer, signer, walletInfo } from './chain.js';
 import { recordText } from './seal.js';
 import { refreshWatch, watch, watchEvents } from './watch.js';
-import { get as getMedia, storage } from './media.js';
+import { get as getMedia, mediaOptions, storage } from './media.js';
 import { MODEL } from './mind.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const EVERY = Number(process.env.ROUND_EVERY_MS ?? 60_000);
+/**
+ * The backlog: until the lineage has BACKLOG_DISKS disks, the Overmind writes fast (one save every BACKLOG_EVERY_MS)
+ * so the tower is already tall when people arrive; then it writes on the minute. Every save keeps its true time.
+ */
+const BACKLOG_DISKS = Number(process.env.BACKLOG_DISKS ?? 0);
+const BACKLOG_EVERY = Number(process.env.BACKLOG_EVERY_MS ?? 6_000);
 let nextAt = 0;
+/** The cadence right now (ms between saves): the page counts down with it. */
+let every = EVERY;
 
 const diskJson = (d: DiskRow) => ({
   n: d.n, seed: Number(d.seed), fascination: d.fascination, written: d.written, sealed: !!d.sealed_at, fingerprint: d.fingerprint,
@@ -49,7 +57,7 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/api/state') {
       const d = await currentDisk();
-      return send(res, 200, { now: Date.now(), slots: SLOTS, disk: d ? diskJson(d) : null, msToNext: Math.max(0, nextAt - Date.now()), watch, launchAt: Number.isNaN(LAUNCH_AT) ? null : LAUNCH_AT });
+      return send(res, 200, { now: Date.now(), slots: SLOTS, disk: d ? diskJson(d) : null, msToNext: Math.max(0, nextAt - Date.now()), every, watch, launchAt: Number.isNaN(LAUNCH_AT) ? null : LAUNCH_AT });
     }
     if (path === '/api/disks') {
       const from = Math.max(0, Number(url.searchParams.get('from') ?? 0) | 0);
@@ -78,7 +86,7 @@ const server = createServer(async (req, res) => {
       res.write(`retry: 5000\n\n`);
       const emit = (type: string) => (data: unknown) => res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
       const handlers = {
-        slot: (s: SlotRow) => emit('slot')(slotJson(s)),
+        slot: (s: SlotRow) => emit('slot')({ ...slotJson(s), every }),
         disk: (d: DiskRow) => emit('disk')(diskJson(d)),
         seal: emit('seal'),
         chain: emit('chain'),
@@ -112,14 +120,27 @@ const server = createServer(async (req, res) => {
 const LEAD = 20_000;
 /** LAUNCH_AT (ISO time): asleep until then; the first save lands on the launch minute. */
 const LAUNCH_AT = process.env.LAUNCH_AT ? Date.parse(process.env.LAUNCH_AT) : NaN;
-function schedule() {
+async function schedule() {
+  const d = await currentDisk().catch(() => undefined);
+  if (d && d.n < BACKLOG_DISKS) {
+    // the backlog: back to back, a save at most every BACKLOG_EVERY (a round that takes longer just writes when done)
+    every = BACKLOG_EVERY;
+    mediaOptions.clips = false; // stills only: clips would fall hours behind at this pace
+    const at = Date.now() + BACKLOG_EVERY;
+    nextAt = at;
+    try { await round(new Date(), at); } catch (e) { console.error('round failed', e); }
+    setTimeout(() => void schedule(), Math.max(0, at - Date.now()));
+    return;
+  }
+  every = EVERY;
+  mediaOptions.clips = true;
   const minute = EVERY === 60_000;
   const from = Number.isNaN(LAUNCH_AT) ? Date.now() : Math.max(Date.now(), LAUNCH_AT - 400);
   const at = minute ? from - (from % 60_000) + 60_400 : Date.now() + EVERY;
   const start = minute && at - LEAD > Date.now() + 1000 ? at - LEAD : at;
   nextAt = at;
   setTimeout(async () => {
-    setTimeout(schedule, Math.max(0, at - Date.now()) + 50); // the next round is planned once this minute has turned
+    setTimeout(() => void schedule(), Math.max(0, at - Date.now()) + 50); // the next round is planned once this minute has turned
     try { await round(new Date(), at); } catch (e) { console.error('round failed', e); }
   }, start - Date.now());
 }
@@ -133,8 +154,8 @@ await refreshWatch();
 setInterval(() => { refreshWatch().catch((e) => console.warn('watch failed', e)); }, 5 * 60_000);
 void anchorPending().catch(() => {});
 server.listen(PORT, () => {
-  console.log(`overmind on :${PORT} · model ${process.env.ANTHROPIC_API_KEY ? MODEL : 'template (no ANTHROPIC_API_KEY)'} · media on ${storage}`);
-  schedule();
+  console.log(`overmind on :${PORT} · model ${process.env.ANTHROPIC_API_KEY ? MODEL : 'template (no ANTHROPIC_API_KEY)'} · media on ${storage}${BACKLOG_DISKS ? ` · backlog to ${BACKLOG_DISKS} disks, a save every ${BACKLOG_EVERY} ms` : ''}`);
+  void schedule();
 });
 const stop = async () => { server.close(); await pool.end(); process.exit(0); };
 process.on('SIGTERM', stop);

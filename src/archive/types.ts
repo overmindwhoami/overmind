@@ -56,7 +56,7 @@ export interface Disk {
   fingerprint: string; // 64 hex characters (simulated SHA-256 in phase 1)
   fascination: string;
   /** Live archive only: the seal's on-chain record (a transaction link), or pending until it confirms. */
-  chain?: { url?: string; pending?: boolean };
+  chain?: { url?: string; pending?: boolean; tx?: string; cluster?: string };
   /** How this disk looks on the tower (shell, label template, hub angle). */
   look: { shell: number; tint: number; label: number; hub: number };
 }
@@ -81,4 +81,16 @@ export interface Archive {
   load(): Promise<void>;
   /** The Q-Day watch, when the archive keeps one (the live service does). */
   watch?(): Watch | undefined;
+  /** Re-checks a sealed disk from the outside (the live service only): re-hash its record, compare with the seal. */
+  verify?(n: number): Promise<Verification>;
+}
+
+/** What CHECK found: the record re-hashed here, against the fingerprint it was sealed with and the memo on Solana. */
+export interface Verification {
+  bytes: number;
+  records: number;
+  hash: string;
+  sealed: string;
+  match: boolean;
+  chain: { state: 'match' | 'mismatch' | 'pending' | 'none' | 'unreachable'; tx?: string; url?: string };
 }

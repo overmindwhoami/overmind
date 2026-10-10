@@ -25,16 +25,24 @@ const HAND = ['"Bradley Hand"', 'Noteworthy', '"Marker Felt"', '"Chalkboard SE"'
 const PAPER = ['#f4f2ec', '#efede6', '#f6f6f4', '#ebe7dc'];
 
 type Ctx = CanvasRenderingContext2D;
+/**
+ * Every label prints in PP NeueBit, the site's bitmap face. Its capitals are about two thirds the height of the
+ * faces the templates were laid out with (and narrower), so sizes scale up to keep each line's height.
+ */
+const BIT = '"PP NeueBit", Menlo, monospace';
+const BIT_SCALE = 1.45;
 const sans = (c: Ctx, t: string, x: number, y: number, size: number, w = 500, align: CanvasTextAlign = 'left', ls = 0) => {
-  c.font = `${w} ${size}px Inter, "Helvetica Neue", Arial, sans-serif`; c.letterSpacing = `${ls}px`; c.textAlign = align; c.fillText(t, x, y); c.letterSpacing = '0px';
+  c.font = `${w >= 600 ? 700 : 400} ${size * BIT_SCALE}px ${BIT}`; c.letterSpacing = `${ls}px`; c.textAlign = align; c.fillText(t, x, y); c.letterSpacing = '0px';
 };
 const mono = (c: Ctx, t: string, x: number, y: number, size: number, w = 400, align: CanvasTextAlign = 'left') => {
-  c.font = `${w} ${size}px "JetBrains Mono", Menlo, Consolas, monospace`; c.textAlign = align; c.fillText(t, x, y);
+  c.font = `${w >= 600 ? 700 : 400} ${size * BIT_SCALE}px ${BIT}`; c.textAlign = align; c.fillText(t, x, y);
 };
+/** The written-on lines: NeueBit too, still a little crooked and in pen colours (`font` picks only the tilt's seed now). */
 function hand(c: Ctx, t: string, x: number, y: number, size: number, font: string, r: () => number, ink = '#1d2433') {
+  void font;
   c.save();
   c.translate(x, y); c.rotate((r() - 0.5) * 0.06);
-  c.font = `${size}px ${font}, cursive`; c.textAlign = 'left'; c.fillStyle = ink; c.globalAlpha = 0.9;
+  c.font = `400 ${size * 1.35}px ${BIT}`; c.textAlign = 'left'; c.fillStyle = ink; c.globalAlpha = 0.9;
   c.fillText(t, 0, 0);
   c.restore();
 }
@@ -157,8 +165,8 @@ const TEMPLATES: ((c: Ctx, d: LabelData, r: (a?: number, b?: number) => number) 
   },
 ];
 
-/** Faces the printed templates use (handwriting uses system fonts). Load these before painting. */
-export const LABEL_FONTS = ['500 12px Inter', '600 12px Inter', '700 12px Inter', '400 12px "JetBrains Mono"', '600 12px "JetBrains Mono"'];
+/** The face every label prints in. Load these before painting. */
+export const LABEL_FONTS = ['400 12px "PP NeueBit"', '700 12px "PP NeueBit"'];
 
 /** 90 ruled ticks along the bottom of the front panel: filled for written slots, hollow for the rest. */
 function drawProgress(c: Ctx, written: number) {
@@ -175,7 +183,16 @@ function drawProgress(c: Ctx, written: number) {
   c.restore();
 }
 
+/** A label with nothing on it yet: the blank disks in the vending machine and on the explorer wall. */
+export const BLANK_LABEL = 1000;
+function blank(c: Ctx) {
+  dieCut(c); c.fillStyle = PAPER[0]; c.fill();
+  c.strokeStyle = 'rgba(30,30,30,0.16)';
+  for (let y = 16; y < FRONT - 6; y += 6.2) rule(c, 5, y, W - 5, y, 0.18);
+}
+
 function paint(c: Ctx, d: LabelData) {
+  if (d.label === BLANK_LABEL) { blank(c); return; }
   TEMPLATES[d.label % TEMPLATES.length](c, d, rng(d.seed ^ 0x51ab));
   if (d.progress !== undefined) drawProgress(c, d.progress);
 }

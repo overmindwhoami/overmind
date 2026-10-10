@@ -9,16 +9,18 @@
 import * as THREE from 'three';
 import { fmtDate, fmtDisk, fmtTime } from '../archive/sim';
 import { sourceName } from '../archive/types';
-import { SLOTS, SLOT_BYTES, type Disk, type Slot } from '../archive/types';
+import { SLOTS, SLOT_BYTES, type Disk, type Slot, type Verification } from '../archive/types';
 import { isPlaying, type Source } from '../hud/source';
 
 export const SCREEN_PX = { w: 1024, h: 768 } as const;
 export type ScreenState =
   | { mode: 'live'; disk: Disk; slot?: Slot; typed: number; source?: Source; clock: number }
   | { mode: 'load'; disk: Disk; t: number; clock: number }
-  | { mode: 'dir'; disk: Disk; slots: Slot[]; selected: number; scroll: number; clock: number }
+  | { mode: 'dir'; disk: Disk; slots: Slot[]; selected: number; scroll: number; clock: number; check?: CheckView }
   | { mode: 'entry'; disk: Disk; slot: Slot; source?: Source; clock: number };
-export interface Hit { kind: 'row' | 'link' | 'back' | 'eject'; index?: number }
+export interface Hit { kind: 'row' | 'link' | 'back' | 'eject' | 'check' | 'seal'; index?: number }
+/** CHECK as it prints: seconds since it started, and what it found (or why it couldn't run). */
+export interface CheckView { t: number; result?: Verification; error?: string }
 
 const W = SCREEN_PX.w, H = SCREEN_PX.h;
 const SANS = (s: number, w = 400) => `${w} ${s}px Geneva, Inter, "Helvetica Neue", Arial, sans-serif`;
@@ -191,8 +193,17 @@ export class ScreenRenderer {
     g.font = MONO(17);
     g.fillText(` Volume in drive A is ${fmtDisk(d.n).replace(' ', '_')}`, x + 18, y + 58);
     g.fillStyle = '#9a9a9a'; g.font = MONO(15);
-    const seal = d.chain?.url ? 'on chain' : d.chain?.pending ? 'chain pending' : 'write-protected';
-    g.fillText(d.sealed ? ` Fingerprint ${d.fingerprint.slice(0, 16)}…${d.fingerprint.slice(-8)}   ${seal}` : ` Writing: slot ${d.written + 1} of ${SLOTS} in under a minute`, x + 18, y + 82);
+    g.fillText(d.sealed ? ` Fingerprint ${d.fingerprint.slice(0, 16)}…${d.fingerprint.slice(-8)}` : ` Writing: slot ${d.written + 1} of ${SLOTS} in under a minute`, x + 18, y + 82);
+    if (d.sealed) { // the seal on Solana, as a link once it's there
+      g.textAlign = 'right';
+      if (d.chain?.url) {
+        const label = `SEALED ON SOLANA  TX ${(d.chain.tx ?? '').slice(0, 4)}…${(d.chain.tx ?? '').slice(-4)} ↗`;
+        g.fillStyle = '#e6e6e6'; g.fillText(label, x + w - 24, y + 82);
+        const lw = g.measureText(label).width;
+        this.hits.push({ x: x + w - 24 - lw, y: y + 64, w: lw, h: 26, hit: { kind: 'seal' } });
+      } else g.fillText(d.chain?.pending ? 'Solana seal pending' : 'write-protected', x + w - 24, y + 82);
+      g.textAlign = 'left';
+    }
     const top = y + 112, rowH = 30;
     const from = Math.max(0, Math.min(s.scroll, Math.max(0, s.slots.length - ROWS)));
     s.slots.slice(from, from + ROWS).forEach((slot, i) => {
@@ -212,9 +223,54 @@ export class ScreenRenderer {
     g.fillStyle = '#bdbdbd'; g.fillRect(x + w - 22, top - 21 + frac * sbH * (1 - Math.min(1, ROWS / Math.max(1, s.slots.length))), 8, sbH * Math.min(1, ROWS / Math.max(1, s.slots.length)));
     g.fillStyle = '#9a9a9a'; g.font = MONO(15);
     g.fillText(`${String(s.slots.length).padStart(3)} file(s)   ${(s.slots.filter((x2) => x2.item).length * SLOT_BYTES).toLocaleString('en-US')} bytes`, x + 18, y + h - 46);
-    g.fillText('↑↓ select   ⏎ open   esc eject', x + 18, y + h - 20);
+    g.fillText(d.sealed ? '↑↓ select   ⏎ open   c check   esc eject' : '↑↓ select   ⏎ open   esc eject', x + 18, y + h - 20);
     g.fillStyle = '#e6e6e6'; g.textAlign = 'right'; g.fillText('[ EJECT ]', x + w - 24, y + h - 20); g.textAlign = 'left';
     this.hits.push({ x: x + w - 140, y: y + h - 40, w: 120, h: 30, hit: { kind: 'eject' } });
+    if (d.sealed) {
+      g.textAlign = 'right'; g.fillText('[ CHECK ]', x + w - 150, y + h - 20); g.textAlign = 'left';
+      this.hits.push({ x: x + w - 270, y: y + h - 40, w: 120, h: 30, hit: { kind: 'check' } });
+    }
+    if (s.check) this.checkPanel(s.check, x + 40, y + 300, w - 80, h - 360);
+  }
+
+  /** CHECK, printed line by line over the directory: the record re-hashed here, the seal, the chain. */
+  private checkPanel(c: CheckView, x: number, y: number, w: number, h: number) {
+    const g = this.g, r = c.result, short = (v: string) => `${v.slice(0, 16)}…${v.slice(-8)}`;
+    g.shadowBlur = 0;
+    g.fillStyle = '#060606'; g.fillRect(x, y, w, h);
+    g.strokeStyle = '#e6e6e6'; g.lineWidth = 2; g.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    g.shadowColor = 'rgba(255,255,255,0.45)'; g.shadowBlur = 6; g.fillStyle = '#e6e6e6'; g.font = MONO(18);
+    const lines: [number, string, string?][] = [[0, 'A:\> CHECK']];
+    if (c.error === 'simulator') lines.push([0.4, 'This is the simulator: there is no sealed record to check.']);
+    else if (c.error === 'unsealed') lines.push([0.4, 'This disk is still being written. Only sealed disks can be checked.']);
+    else if (c.error) lines.push([0.4, 'CHECK could not reach the archive. Try again in a moment.']);
+    else {
+      lines.push([0.4, r ? `read the record ........ ${r.bytes.toLocaleString('en-US')} bytes, ${r.records} records` : `reading the record ${'.'.repeat(1 + (Math.floor(c.t * 6) % 3))}`]);
+      if (r) {
+        lines.push([1.0, `sha256, worked out here  ${short(r.hash)}`]);
+        lines.push([1.5, `fingerprint at sealing   ${short(r.sealed)}`]);
+        lines.push([2.1, r.match ? 'MATCH' : 'MISMATCH', r.match ? 'the disk is exactly what was sealed.' : 'the record has changed since it was sealed.']);
+        const chain = r.chain.state === 'match' ? `on Solana: the memo in tx ${(r.chain.tx ?? '').slice(0, 4)}…${(r.chain.tx ?? '').slice(-4)} says the same ↗`
+          : r.chain.state === 'mismatch' ? 'on Solana: the memo does NOT match.'
+            : r.chain.state === 'pending' ? 'on Solana: not yet. Sealing on chain starts once its wallet has SOL.'
+              : r.chain.state === 'unreachable' ? 'on Solana: no answer from the network right now.' : 'on Solana: this disk was never sealed on chain.';
+        lines.push([2.7, chain]);
+      }
+    }
+    let ly = y + 40;
+    for (const [at, text, after] of lines) {
+      if (c.t < at) break;
+      if (text === 'MATCH' || text === 'MISMATCH') {
+        g.font = MONO(30, 700); g.fillText(text, x + 24, ly + 8);
+        const tw = g.measureText(text).width; g.font = MONO(18); g.fillText(`  ${after ?? ''}`, x + 24 + tw, ly + 8);
+        ly += 46;
+      } else {
+        g.fillText(text, x + 24, ly);
+        if (text.endsWith('↗')) this.hits.push({ x: x + 20, y: ly - 22, w: w - 40, h: 30, hit: { kind: 'seal' } });
+        ly += 32;
+      }
+    }
+    g.shadowBlur = 0;
   }
 
   private entry(s: Extract<ScreenState, { mode: 'entry' }>) {

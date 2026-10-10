@@ -5,13 +5,15 @@
  * (a slot every minute, its media a little later, the seal, the next disk).
  */
 import { lookOf, pseudoFingerprint } from './sim';
-import { SLOTS, type Archive, type Disk, type Item, type Slot, type Watch } from './types';
+import { SLOTS, type Archive, type Disk, type Item, type Slot, type Verification, type Watch } from './types';
 
 type DiskJson = {
   n: number; seed: number; fascination: string; written: number; sealed: boolean; fingerprint: string | null; startedAt: number; sealedAt: number | null;
-  chain: { url?: string; pending?: boolean } | null;
+  chain: { url?: string; pending?: boolean; tx?: string; cluster?: string } | null;
 };
-type SlotJson = { disk: number; index: number; time: number; item?: Item; note: string; file: string; model: string };
+const RPC: Record<string, string> = { 'mainnet-beta': 'https://api.mainnet-beta.solana.com', devnet: 'https://api.devnet.solana.com', testnet: 'https://api.testnet.solana.com' };
+const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
+type SlotJson = { disk: number; index: number; time: number; item?: Item; note: string; file: string; model: string; every?: number };
 const RANGE = 120; // disks fetched per request around the one asked for
 
 export class RemoteArchive implements Archive {
@@ -25,6 +27,7 @@ export class RemoteArchive implements Archive {
   private offset = 0;
   private stale = false;
   private watched?: Watch;
+  private every = 60_000;
 
   constructor(base: string) { this.base = base.replace(/\/+$/, ''); }
 
@@ -86,7 +89,8 @@ export class RemoteArchive implements Archive {
 
   /** The state, the top of the lineage and the live disk's slots (on start, and after the event stream drops). */
   private async sync() {
-    const st = await this.get<{ now: number; disk: DiskJson | null; msToNext: number; watch?: Watch }>('/api/state');
+    const st = await this.get<{ now: number; disk: DiskJson | null; msToNext: number; every?: number; watch?: Watch }>('/api/state');
+    if (st.every) this.every = st.every;
     this.watched = st.watch;
     this.offset = st.now - Date.now();
     this.nextAt = Date.now() + st.msToNext;
@@ -105,7 +109,9 @@ export class RemoteArchive implements Archive {
   private listen() {
     const es = new EventSource(`${this.base}/api/events`);
     es.addEventListener('slot', (e) => {
-      const s = this.toSlot(JSON.parse((e as MessageEvent).data) as SlotJson);
+      const raw = JSON.parse((e as MessageEvent).data) as SlotJson;
+      if (raw.every) this.every = raw.every;
+      const s = this.toSlot(raw);
       if (s.disk < this.cur.disk) return this.restarted();
       // the same slot again, written at a different time: the lineage was reset and is writing over its old numbers
       const same = this.slots.get(s.disk)?.find((x) => x.index === s.index);
@@ -116,7 +122,7 @@ export class RemoteArchive implements Archive {
       const d = this.disks.get(s.disk);
       if (d) d.written = Math.max(d.written, s.index + 1);
       if (s.disk === this.cur.disk) this.cur.written = Math.max(this.cur.written, s.index + 1);
-      this.nextAt = s.time + 60_400 - this.offset;
+      this.nextAt = s.time + this.every + 400 - this.offset; // the server's pace (fast while it writes its backlog)
     });
     es.addEventListener('media', (e) => {
       const m = JSON.parse((e as MessageEvent).data) as { disk: number; k: number; media?: string; clip?: string };
@@ -145,6 +151,37 @@ export class RemoteArchive implements Archive {
     es.addEventListener('watch', (e) => { this.watched = JSON.parse((e as MessageEvent).data) as Watch; });
     es.onerror = () => { this.stale = true; };
     es.onopen = () => { if (this.stale) { this.stale = false; void this.sync(); } };
+  }
+
+  /**
+   * CHECK, done here and not on trust: fetch the disk's record (the exact text that was hashed when it sealed),
+   * SHA-256 it in this browser, compare with the fingerprint the lineage gave for it; then ask Solana itself for the
+   * seal's memo and compare that too.
+   */
+  async verify(n: number): Promise<Verification> {
+    const res = await fetch(`${this.base}/api/disks/${n}/record`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`${res.status} record`);
+    const text = await res.text();
+    const bytes = new TextEncoder().encode(text);
+    const hash = hex(await crypto.subtle.digest('SHA-256', bytes));
+    const d = this.disks.get(n);
+    const sealed = d?.fingerprint ?? '';
+    let records = 0;
+    try { records = (JSON.parse(text) as unknown[]).length; } catch { /* counted as 0 */ }
+    const chain: Verification['chain'] = { state: d?.chain?.tx ? 'unreachable' : d?.chain?.pending ? 'pending' : 'none', tx: d?.chain?.tx, url: d?.chain?.url };
+    if (d?.chain?.tx) {
+      try {
+        const rpc = RPC[d.chain.cluster ?? 'mainnet-beta'] ?? RPC['mainnet-beta'];
+        const r = await fetch(rpc, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTransaction', params: [d.chain.tx, { encoding: 'json', maxSupportedTransactionVersion: 0, commitment: 'confirmed' }] }),
+        });
+        const tx = (await r.json()) as { result?: { meta?: { logMessages?: string[] } } };
+        const memo = tx.result?.meta?.logMessages?.find((l) => l.includes('Memo'));
+        if (memo) chain.state = memo.includes(`sha256:${hash}`) ? 'match' : 'mismatch';
+      } catch { /* stays unreachable */ }
+    }
+    return { bytes: bytes.length, records, hash, sealed, match: hash === sealed, chain };
   }
 
   /** The lineage went backwards: it was reset (at launch). Everything on the page belongs to the old one, so start over. */

@@ -9,17 +9,20 @@
  * Millimetres inside `scaled`; `root` is in world units.
  */
 import * as THREE from 'three';
-import { MM, type FloppyKit } from './floppy/kit';
+import { MM, DiskSet, SHELLS, type FloppyKit, type FloppyRecord } from './floppy/kit';
+import { BLANK_LABEL } from './floppy/labels';
 import { lightScale, type GlassUniforms } from './floppy/materials';
 import { Board, BOARD } from '../machine/board';
 import { QClock, CLOCK } from '../machine/clock';
 import { buildDesk, DESK } from '../machine/desk';
-import { Manual } from '../machine/manual';
+import { Manual, MANUAL } from '../machine/manual';
 import { Duplicator, DUP } from '../machine/duplicator';
-import { buildWall, WALL } from '../machine/wall';
-import { Vending, VEND } from '../machine/vending';
+import { buildWall, slot as wallSlot, SLOTS as WALL_SLOTS, WALL } from '../machine/wall';
+import { Vending, VEND, VEND_TURNS, vendingBlanks } from '../machine/vending';
 import type { Current } from './dirty';
 
+/** The room wakes in groups (the first visit lights them one at a time): the clock, the computer, everything else. */
+export type WakeGroup = 'clock' | 'computer' | 'rest';
 export type PlaceName = 'tower' | 'docs' | 'omd' | 'terminal' | 'launch' | 'explorer' | 'mint' | 'room';
 export const PLACES: { name: Exclude<PlaceName, 'tower'>; label: string; soon?: boolean }[] = [
   { name: 'docs', label: 'docs' },
@@ -69,6 +72,16 @@ export class Room {
   /** Readable surfaces by place: only the place being visited stays clean. */
   readonly placeFaces: Partial<Record<PlaceName, THREE.Mesh[]>> = {};
   private boardAt = -1;
+  /** The blank disks in the room: every vending lane full, one in every wall cubby (tokens take them over as they launch). */
+  private blanks?: { set: DiskSet; entries: { rec: FloppyRecord; matrix: THREE.Matrix4; cell: number }[]; kit: FloppyKit; cell: number };
+  private placed = false;
+  /** How lit each group is (0 dark … 1 as normal), where it's heading, and how fast it gets there. */
+  readonly wake: Record<WakeGroup, { value: number }> = { clock: { value: 1 }, computer: { value: 1 }, rest: { value: 1 } };
+  private wakeTarget: Record<WakeGroup, number> = { clock: 1, computer: 1, rest: 1 };
+  private wakeRate: Record<WakeGroup, number> = { clock: 2.2, computer: 2.2, rest: 1.3 };
+  private spots: { light: THREE.SpotLight; base: number; group: WakeGroup }[] = [];
+  /** Until the coin exists the board says so (it only ever shows numbers that add up). */
+  boardRows = ['$OMD', 'NOT LAUNCHED', 'NUMBERS WHEN', 'IT IS LIVE'];
 
   constructor() {
     this.scaled.scale.setScalar(MM);
@@ -122,6 +135,11 @@ export class Room {
     this.shell(glass);
     this.lights();
     this.buildLift();
+    this.fillBlanks(kit, wall);
+    this.wakeable('clock', this.clock.group, [this.clock.lit]);
+    this.wakeable('computer', desk);
+    this.wakeable('computer', this.manual.group);
+    for (const o of [this.board.group, wall, dup, this.vending.group]) this.wakeable('rest', o);
 
     // colour and stillness for each object: boxes round them (the mask only needs silhouettes)
     const proxy = (o: THREE.Object3D, w: number, h: number, d: number, y: number, z = 0) => {
@@ -205,6 +223,7 @@ export class Room {
       l.position.copy(from).multiplyScalar(MM);
       l.target.position.copy(to).multiplyScalar(MM);
       this.root.add(l, l.target);
+      this.spots.push({ light: l, base: intensity, group: 'rest' });
     };
     spot(v3(-1000, 3400, 1400), v3(-1150, 500, 650), 4200, 0.34);
     spot(v3(-2200, 3400, -800), v3(-2380, 700, -2000), 4200, 0.42);
@@ -219,20 +238,97 @@ export class Room {
     // on a tall screen the room turns so the desk stands behind the tower (the computer's old portrait pose)
     this.root.rotation.y = portrait ? 0.274 : 0;
     const target = anchor - PC.drop - DESK.h * MM;
-    this.floorY = this.boardAt < 0 ? target : this.floorY + (target - this.floorY) * (1 - Math.exp(-dt * 3));
+    this.floorY = !this.placed ? target : this.floorY + (target - this.floorY) * (1 - Math.exp(-dt * 3));
+    this.placed = true;
+    // waking: each group's light glides to its target (one law, no snapping); the pools follow their objects
+    for (const g of ['clock', 'computer', 'rest'] as const) {
+      const w = this.wake[g];
+      w.value += (this.wakeTarget[g] - w.value) * (1 - Math.exp(-dt * this.wakeRate[g]));
+      if (Math.abs(w.value - this.wakeTarget[g]) < 1e-3) w.value = this.wakeTarget[g];
+    }
+    for (const s of this.spots) s.light.intensity = s.base * this.wake[s.group].value;
+    // the blank disks: keep their shared label cell in use (so the tower never takes it), show them with the room's light
+    const b = this.blanks;
+    if (b) {
+      const cell = b.kit.atlas.cell(-1000, b.entries[0].rec);
+      if (cell !== b.cell) { b.cell = cell; for (const e of b.entries) e.cell = cell; b.set.set(b.entries); }
+      b.set.setVisible(this.wake.rest.value > 0.35);
+    }
     this.root.position.y = this.floorY;
     this.lift.position.y = base - this.floorY; // the lift column's top, in the root's frame
     this.board.update(dt);
     this.clock.show(qday - now);
     this.clock.update(now);
-    // the board flaps from blank to its rows now and then (and once on load)
-    if (this.boardAt < 0 || now - this.boardAt > 45_000) {
+    // the board flaps from blank to its rows as it wakes, and again now and then
+    if (this.wake.rest.value > 0.3 && (this.boardAt < 0 || now - this.boardAt > 45_000)) {
       const first = this.boardAt < 0;
       this.boardAt = now;
-      const rows = ['$OMD', 'PRICE      ---', 'MCAP       ---', 'HOLDERS    ---'];
-      if (!first) for (let r = 0; r < 4; r++) this.board.set(r, '', 'left', true);
-      rows.forEach((s, r) => this.board.set(r, s, r ? 'left' : 'centre'));
+      // the $OMD row flips in once and stays; the rows under it refresh (from blank, so they visibly turn over)
+      if (!first) for (let r = 1; r < 4; r++) this.board.set(r, '', 'left', true);
+      this.boardRows.forEach((s, r) => { if (first || r > 0) this.board.set(r, s, 'centre'); });
     }
+  }
+
+  /** Puts the floppy kit's disks into the vending lanes and the wall's cubbies (matrices in the root's frame). */
+  private fillBlanks(kit: FloppyKit, wall: THREE.Object3D) {
+    let seed = 11;
+    const r = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    // a 90s box of colour diskettes: solid coloured plastic (tinted see-through shells read as black at this size)
+    const PALETTE = ['#d8322c', '#ef7b1f', '#f3c331', '#3aa857', '#1fa4a4', '#2b64cc', '#7b44b8', '#e2569c'].map((h) => new THREE.Color(h));
+    const rec = (shell: number, color?: THREE.Color): FloppyRecord => {
+      const [a, b] = SHELLS[shell].tint;
+      return { index: -1, gen: 0, parent: null, hash: '0'.repeat(64), block: 0, born: '', label: BLANK_LABEL, seed: 1, alive: false,
+        shell, tint: a + (b - a) * r(), open: 0, protect: false, hub: r() * Math.PI * 2, color };
+    };
+    const coloured = (i: number) => rec(2, PALETTE[i % PALETTE.length]);
+    const BLANK_KEY = -1000;
+    const cell = kit.atlas.cell(BLANK_KEY, rec(2));
+    this.scaled.updateMatrix(); wall.updateMatrix(); this.vending.group.updateMatrix();
+    const p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+    const toRoot = (parent: THREE.Object3D, local: THREE.Matrix4) => {
+      new THREE.Matrix4().multiplyMatrices(this.scaled.matrix, parent.matrix).multiply(local).decompose(p, q, sc);
+      return new THREE.Matrix4().compose(p, q, new THREE.Vector3(1, 1, 1)); // kit disks are already world-sized
+    };
+    const entries: { rec: FloppyRecord; matrix: THREE.Matrix4; cell: number }[] = [];
+    // vending: every lane one colour (like a row of the same snack)
+    const lanes = vendingBlanks(), perLane = VEND_TURNS;
+    lanes.forEach((m, i) => {
+      const lane = Math.floor(i / perLane);
+      entries.push({ rec: coloured(lane * 3 + Math.floor(lane / 5)), matrix: toRoot(this.vending.group, m), cell });
+    });
+    // the wall: every colour, mixed
+    for (let i = 0; i < WALL_SLOTS; i++) entries.push({ rec: coloured(Math.floor(r() * PALETTE.length)), matrix: toRoot(wall, wallSlot(i)), cell });
+    const set = new DiskSet(kit, entries.length, this.root);
+    set.set(entries);
+    this.blanks = { set, entries, kit, cell };
+  }
+
+  /**
+   * Makes a group wakeable: every material under `root` (but `skip`) multiplies its light by the group's level, so a
+   * dark object is genuinely unlit, not covered. Call once per object, after it's built.
+   */
+  wakeable(group: WakeGroup, root: THREE.Object3D, skip: THREE.Material[] = []) {
+    const u = this.wake[group], done = new Set<THREE.Material>(skip);
+    root.traverse((o) => {
+      const mat = (o as THREE.Mesh).material;
+      for (const m of mat ? (Array.isArray(mat) ? mat : [mat]) : []) {
+        if (done.has(m)) continue;
+        done.add(m);
+        const prev = m.onBeforeCompile.bind(m), prevKey = m.customProgramCacheKey.bind(m);
+        m.onBeforeCompile = (shader, renderer) => {
+          prev(shader, renderer);
+          shader.uniforms.uWake = u;
+          shader.fragmentShader = 'uniform float uWake;\n' + shader.fragmentShader.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n\tgl_FragColor.rgb *= uWake;');
+        };
+        m.customProgramCacheKey = () => `${prevKey()}|wake`;
+        m.needsUpdate = true;
+      }
+    });
+  }
+  /** Sets where a group's light is heading (`now` jumps there). */
+  light(group: WakeGroup, to: number, now = false) {
+    this.wakeTarget[group] = to;
+    if (now) this.wake[group].value = to;
   }
 
   /** Where each place's name tag floats in the room view (world units): above the middle of its click target. */
@@ -303,6 +399,7 @@ export class Room {
       const look = this.scaled.localToWorld(centre.clone()), pos = this.scaled.localToWorld(centre.clone().add(off));
       return { pos, look, distance: pos.distanceTo(look), kind: 'rain' as const, object: this.scaled };
     }
+    if (name === 'docs') return this.docsView(camera);
     const v = this.views[name];
     v.box.updateWorldMatrix(true, true);
     const box = this.boxOf(v.box);
@@ -314,6 +411,33 @@ export class Room {
     const wide = Math.max(size.x, size.z * 0.6), d = Math.max((size.y * v.fit) / 2 / tan, (wide * v.fit) / 2 / (tan * camera.aspect));
     const dir = fwd.clone().addScaledVector(right, v.side).add(v3(0, v.up, 0)).normalize();
     return { pos: look.clone().addScaledVector(dir, d), look, distance: d, kind: v.kind, object: v.box };
+  }
+
+  /**
+   * Docs: close enough to read. The camera comes down almost overhead (a little toward the reader, so the pages keep
+   * some depth) with the pages upright on screen: the whole spread across a wide screen, the right-hand page alone on
+   * a tall one.
+   */
+  private docsView(camera: THREE.PerspectiveCamera) {
+    const g = this.manual.group, { pageW, pageD, gutter } = MANUAL;
+    g.updateWorldMatrix(true, false);
+    const tall = camera.aspect < 1;
+    const centre = g.localToWorld(v3(tall ? gutter + pageW / 2 : 0, 12, 0));
+    const q = g.getWorldQuaternion(new THREE.Quaternion());
+    const toward = v3(0, 0, 1).applyQuaternion(q), pageUp = v3(0, 0, -1).applyQuaternion(q);
+    const tilt = 0.2; // radians off vertical, toward the reader
+    const dir = v3(0, 1, 0).multiplyScalar(Math.cos(tilt)).addScaledVector(toward, Math.sin(tilt)).normalize();
+    const tan = Math.tan((camera.fov * Math.PI) / 360);
+    const w = (tall ? pageW : pageW * 2 + gutter * 2) * MM * 1.06, h = pageD * MM * 1.08;
+    const d = Math.max(h / 2 / tan, w / 2 / (tan * camera.aspect));
+    const up = pageUp.clone().addScaledVector(dir, -pageUp.dot(dir)).normalize();
+    return { pos: centre.clone().addScaledVector(dir, d), look: centre, distance: d, kind: 'pour' as const, object: g, up };
+  }
+
+  /** A place's click target as a world box (the walkthrough frames overmind's tower by it). */
+  hitBox(place: PlaceName) {
+    const m = this.hits.children.find((h) => h.userData.place === place);
+    return m ? new THREE.Box3().setFromObject(m) : undefined;
   }
 
   /** The screen rectangle a place occupies (for the dither's current): its bounding box, projected. */

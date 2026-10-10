@@ -11,7 +11,7 @@ import type { Machine } from '../machine/geom';
 import { MM, type FloppyKit } from './floppy/kit';
 import type { GlassUniforms } from './floppy/materials';
 import type { Archive } from '../archive/sim';
-import type { Slot } from '../archive/types';
+import type { Slot, Verification } from '../archive/types';
 import { sourceFor, isPlaying } from '../hud/source';
 
 /** Objects on this layer keep (mild) colour through the post chain. */
@@ -84,12 +84,31 @@ export class Station {
     return new THREE.Matrix4().compose(p.multiplyScalar(MM), q, new THREE.Vector3(1, 1, 1)).premultiply(new THREE.Matrix4().compose(this.root.position, this.root.quaternion, new THREE.Vector3(1, 1, 1)));
   }
 
-  insert(n: number, worldMatrix: THREE.Matrix4) {
+  /** CHECK on the screen: when it started, and what it found (or why it couldn't). */
+  private checking?: { at: number; result?: Verification; error?: string };
+  private autoCheck = false;
+
+  /** Re-checks the disk in the drive (sealed disks only): the record re-hashed here, against its seal and the chain. */
+  check() {
+    if (this.phase !== 'read' || this.disk === undefined) return;
+    const n = this.disk, d = this.archive.disk(n);
+    this.view = 'dir';
+    this.checking = { at: performance.now() };
+    const c = this.checking;
+    if (!d.sealed) c.error = 'unsealed';
+    else if (!this.archive.verify) c.error = 'simulator';
+    else this.archive.verify(n).then((r) => { c.result = r; }, () => { c.error = 'unreachable'; });
+    this.redraw = 0;
+  }
+
+  insert(n: number, worldMatrix: THREE.Matrix4, { check = false } = {}) {
+    this.autoCheck = check;
+    this.checking = undefined;
     if (this.phase !== 'idle') return;
     this.disk = n; this.start.copy(worldMatrix); this.phase = 'fly'; this.t = 0;
     this.view = 'dir'; this.selected = Math.max(0, this.archive.disk(n).written - 1); this.scroll = Math.max(0, this.selected - ROWS + 1);
   }
-  eject() { if (this.phase === 'read' || this.phase === 'insert') { this.phase = 'eject'; this.t = 0; } }
+  eject() { if (this.phase === 'read' || this.phase === 'insert') { this.phase = 'eject'; this.t = 0; this.checking = undefined; } }
 
   /**
    * Advance the animation. `home` gives the disk's current world matrix in the stack (it turns with the tower).
@@ -109,7 +128,7 @@ export class Station {
       } else if (this.phase === 'insert') {
         const e = ease(Math.min(1, this.t / INSERT));
         out = { matrix: this.slotMatrix(1 - e), open: e };
-        if (this.t >= INSERT) { this.phase = 'read'; this.t = 0; }
+        if (this.t >= INSERT) { this.phase = 'read'; this.t = 0; if (this.autoCheck) { this.autoCheck = false; this.check(); } }
       } else if (this.phase === 'read') {
         out = { matrix: this.slotMatrix(0), open: 1 };
       } else if (this.phase === 'eject') {
@@ -137,7 +156,11 @@ export class Station {
       const slots = this.archive.written(this.disk);
       this.selected = Math.min(this.selected, Math.max(0, slots.length - 1));
       if (this.view === 'entry' && slots[this.selected]) this.screen.draw({ mode: 'entry', disk, slot: slots[this.selected], source: this.play(sourceFor(slots[this.selected].item)), clock });
-      else this.screen.draw({ mode: 'dir', disk, slots, selected: this.selected, scroll: this.scroll, clock });
+      else {
+        const c = this.checking, t = c ? (performance.now() - c.at) / 1000 : 0;
+        this.screen.draw({ mode: 'dir', disk, slots, selected: this.selected, scroll: this.scroll, clock, check: c && { t, result: c.result, error: c.error } });
+        if (c && t < 4) { this.redraw = 1 / 20; return; } // the check prints out line by line
+      }
       this.redraw = this.view === 'entry' && this.playing && isPlaying(this.playing) ? 1 / 15 : 0.25;
       return;
     }
@@ -186,6 +209,8 @@ export class Station {
     return this.archive.written(this.disk)[this.selected];
   }
   act(hit: Hit) {
+    if (hit.kind === 'check') { this.check(); return; }
+    if (hit.kind === 'seal') { const url = this.disk !== undefined ? this.archive.disk(this.disk).chain?.url : undefined; if (url) window.open(url, '_blank', 'noopener'); return; }
     if (hit.kind === 'row' && hit.index !== undefined) { if (this.view === 'dir' && this.selected === hit.index) this.view = 'entry'; else { this.selected = hit.index; this.view = 'entry'; } }
     else if (hit.kind === 'back') this.view = 'dir';
     else if (hit.kind === 'eject') this.eject();
@@ -200,6 +225,7 @@ export class Station {
     else if (key === 'ArrowUp') { this.selected = Math.max(0, this.selected - 1); this.view = 'dir'; }
     else if (key === 'Enter') { if (this.view === 'entry') this.act({ kind: 'link' }); else this.view = 'entry'; }
     else if (key === 'Backspace') this.view = 'dir';
+    else if (key === 'c' || key === 'C') this.check();
     else return false;
     if (this.selected < this.scroll) this.scroll = this.selected;
     if (this.selected >= this.scroll + ROWS) this.scroll = this.selected - ROWS + 1;

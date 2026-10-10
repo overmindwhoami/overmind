@@ -74,7 +74,8 @@ export class QClock {
   private days: Digit[] = [];
   private time: Digit[] = [];
   private colons: THREE.Mesh[] = [];
-  private lit: THREE.MeshBasicMaterial;
+  /** The lit segments: they glow even while the room is dark (the clock is the first thing to catch the eye). */
+  readonly lit: THREE.MeshBasicMaterial;
 
   constructor(t: FloppyTextures, gu: GlassUniforms) {
     const P = new Parts();

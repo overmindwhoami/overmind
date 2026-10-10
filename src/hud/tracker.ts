@@ -19,9 +19,10 @@ const pick = <T,>(list: readonly T[]) => list[Math.floor(Math.random() * list.le
 
 const LINE = 'rgb(236 236 236 / 85%)';
 const SHADOW = 'rgb(0 0 0 / 70%)';
-const FONT_LABEL = '500 11px Inter, "Helvetica Neue", Arial, sans-serif';
-const FONT_TITLE = '600 13px Inter, "Helvetica Neue", Arial, sans-serif';
-const FONT_ASCII = '600 8px "JetBrains Mono", Menlo, monospace';
+// PP NeueBit, like the rest of the site's own text (its grid is 28 px to the em: 14 and 21 px sit on it)
+const FONT_LABEL = '400 14px "PP NeueBit", Menlo, monospace';
+const FONT_TITLE = '700 21px "PP NeueBit", Menlo, monospace';
+const FONT_ASCII = '400 14px "PP NeueBit", Menlo, monospace';
 const ASCII_RAMP = ['', '·', '/', '×', '□', '▣'];
 const DASHES = [[], [3, 4], [6, 5], [1, 4], [12, 6]];
 
