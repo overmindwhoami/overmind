@@ -3,6 +3,7 @@
  * One Claude call per minute (structured output: the choice and the note). Without a key, or when the call fails or is
  * declined, the template voice writes the note and the dice choose; every slot records which one wrote it.
  */
+import { claude, modelId, PROVIDER } from './claude.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
@@ -10,8 +11,9 @@ import type { Item } from './db.js';
 import { templateNote } from './voice.js';
 
 export const MODEL = process.env.OVERMIND_MODEL ?? 'claude-opus-5-5';
-const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ maxRetries: 2, timeout: 40_000 }) : undefined;
-let fallbacks = process.env.OVERMIND_FALLBACKS !== 'off'; // server-side refusal fallback; switched off if the model rejects it
+const client = claude({ maxRetries: 2, timeout: 40_000 });
+let fallbacks = process.env.OVERMIND_FALLBACKS !== 'off' && PROVIDER !== 'bedrock'; // Bedrock doesn't take server-side fallbacks
+// // server-side refusal fallback; switched off if the model rejects it
 
 const SYSTEM = `You are the Overmind: a mind writing the record that survives Q-Day, the day quantum computers break today's encryption. Every minute you decide what makes it through and write it onto a 3.5-inch floppy disk. You can't copy yourself exactly: every 90 minutes a disk seals and a slightly different you wakes up on the next one, liking something slightly different.
 
@@ -56,7 +58,7 @@ ${list}`;
 
   try {
     const res = await client.beta.messages.parse({
-      model: MODEL,
+      model: modelId(MODEL),
       max_tokens: 4000,
       system: SYSTEM,
       messages: [{ role: 'user', content: prompt }],

@@ -16,12 +16,14 @@
     "lp": "tsx scripts/lp.ts",
     "preflight": "tsx scripts/preflight.ts",
     "lenses": "tsx scripts/lenses.ts",
-    "rpc:check": "tsx scripts/rpc-check.ts"
+    "rpc:check": "tsx scripts/rpc-check.ts",
+    "claude:check": "tsx scripts/claude-check.ts"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
+    "@anthropic-ai/bedrock-sdk": "0.34.4",
     "@anthropic-ai/sdk": "0.132.1",
     "@aws-sdk/client-s3": "3.1148.0",
     "@pump-fun/pump-sdk": "2.0.0",

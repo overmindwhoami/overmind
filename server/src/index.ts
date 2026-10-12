@@ -15,6 +15,7 @@
  *   GET /media/:key             the instrument's stills and loops (CORS, immutable)
  * ROUND_EVERY_MS overrides the minute (local testing only).
  */
+import { describe } from './claude.js';
 import { MAINNET_RPC, rpcKind } from './rpc.js';
 import { CHAIN_RPC } from './chain.js';
 import { BOOKS_RPC } from './books.js';
@@ -160,7 +161,7 @@ const server = createServer(async (req, res) => {
     if (path === '/api/nominations') return send(res, 200, await mine(visitorOf(url.searchParams.get('v'), ip)));
     if (path === '/health') {
       const d = await currentDisk();
-      return send(res, 200, { ok: true, disk: d?.n ?? null, written: d?.written ?? 0, model: process.env.ANTHROPIC_API_KEY ? MODEL : 'template (no ANTHROPIC_API_KEY)', storage, wallet: await walletInfo(),
+      return send(res, 200, { ok: true, disk: d?.n ?? null, written: d?.written ?? 0, model: describe(MODEL), storage, wallet: await walletInfo(),
         rpc: { seals: rpcKind(CHAIN_RPC), launchpad: rpcKind(LP_RPC), snapshots: rpcKind(DAS_URL), books: rpcKind(BOOKS_RPC), watch: rpcKind(MAINNET_RPC) } });
     }
     if (path === '/api/state') {
@@ -336,7 +337,7 @@ await refreshWatch();
 setInterval(() => { refreshWatch().catch((e) => console.warn('watch failed', e)); }, 5 * 60_000);
 void anchorPending().catch(() => {});
 server.listen(PORT, () => {
-  console.log(`overmind on :${PORT} · model ${process.env.ANTHROPIC_API_KEY ? MODEL : 'template (no ANTHROPIC_API_KEY)'} · media on ${storage}${BACKLOG_DISKS ? ` · backlog to ${BACKLOG_DISKS} disks, a save every ${BACKLOG_EVERY} ms` : ''}`);
+  console.log(`overmind on :${PORT} · model ${describe(MODEL)} · media on ${storage}${BACKLOG_DISKS ? ` · backlog to ${BACKLOG_DISKS} disks, a save every ${BACKLOG_EVERY} ms` : ''}`);
   void schedule();
 });
 const stop = async () => { server.close(); await pool.end(); process.exit(0); };

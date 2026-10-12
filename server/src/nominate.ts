@@ -6,11 +6,12 @@
  * without it, an Archive item has to be at least a month old (so nobody uploads something and nominates it the same
  * day). The visitor who asked hears whether it made it through.
  */
+import { PROVIDER } from './claude.js';
 import { pool, type Item } from './db.js';
 
 const UA = { 'User-Agent': 'OvermindArchivist/0.3 (a visitor nominated this; one request)' };
 const PER_VISITOR_DAY = 3, PER_IP_DAY = 8, QUEUE_CAP = 300;
-const SCREENED = !!process.env.ANTHROPIC_API_KEY; // Claude weighs nominations; without it the curated-source rules do
+const SCREENED = !!PROVIDER; // Claude weighs nominations; without it the curated-source rules do
 
 export async function migrateNominations() {
   await pool.query(`

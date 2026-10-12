@@ -3,6 +3,7 @@
  * write, save the slot. The 90th slot seals the disk (fingerprint over its slots) and a fresh disk starts, with a new
  * fascination. Media for the saved item is made afterwards, in the background.
  */
+import { PROVIDER } from './claude.js';
 import { EventEmitter } from 'node:events';
 import { createDisk, currentDisk, pendingSeals, recentNotes, sealDisk, setSealTx, slots, updateSlotMedia, writeSlot, type DiskRow, type Item, type SlotRow } from './db.js';
 import { CLUSTER, explorer, forgetBalance, record, walletInfo } from './chain.js';
@@ -103,7 +104,7 @@ export async function round(now = new Date(), at?: number): Promise<SlotRow | un
       // curated-source rules when it was taken, so it goes on the disk with a note that says who brought it
       nominationAt = Date.now();
       lens = 'visitor'; qdayLens = false;
-      if (process.env.ANTHROPIC_API_KEY) {
+      if (PROVIDER) {
         const found = await candidates(rand, now, 6, process.env.ONLY_LENS, false).catch(() => ({ lens: 'visitor', items: [] as Item[] }));
         w = await write([nom.item, ...found.items], { disk: d.n, minute: k + 1, fascination: d.fascination, recent: await recentNotes(6), rand, world: context(), qday: false, nominated: 0 });
       } else {

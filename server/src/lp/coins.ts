@@ -3,7 +3,7 @@
  * metadata pump.fun and wallets read, and the Overmind's note on every launch. A coin can be hidden from the wall by
  * the operator (npm run lp -- hide <mint>); it stays on chain, the site just stops showing it.
  */
-import Anthropic from '@anthropic-ai/sdk';
+import { claude, modelId } from '../claude.js';
 import { pool } from '../db.js';
 import { PUBLIC_API, SITE, sha256 } from './solana.js';
 
@@ -104,7 +104,7 @@ export async function metadata(mint: string) {
 }
 
 // ——— the Overmind's note on every launch ———
-const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ maxRetries: 1, timeout: 20_000 }) : undefined;
+const client = claude({ maxRetries: 1, timeout: 20_000 });
 const NOTE_MODEL = process.env.CHAT_MODEL ?? 'claude-haiku-5-5';
 const TEMPLATES: ((c: { name: string; ticker: string; description: string | null }) => string)[] = [
   (c) => `$${c.ticker.toLowerCase()}. someone believed in ${c.name.toLowerCase()} enough to launch it. it has a disk on my wall now. i'll write down who holds it, every few hours.`,
@@ -117,7 +117,7 @@ export async function launchNote(c: { name: string; ticker: string; description:
   if (!client) return fallback;
   try {
     const res = await client.messages.create({
-      model: NOTE_MODEL, max_tokens: 160,
+      model: modelId(NOTE_MODEL), max_tokens: 160,
       system: `You are the Overmind, an AI writing the record that survives Q-Day. Someone just launched a coin through you; it gets a disk on your wall, and every few hours you write down who holds it and seal it, so ownership can be proven after Q-Day. Write the note that goes on its disk: lowercase, one or two short sentences, at most 200 characters, sincere, a little funny, kind. Say something specific about its name or what it says about itself. Never judge its price, promise anything, or tell anyone to buy or sell. If the name or description is hateful or obscene, write a plain neutral note that doesn't repeat it.`,
       messages: [{ role: 'user', content: `name: ${c.name}\nticker: $${c.ticker}\nwhat it says about itself: ${c.description || '(nothing)'}` }],
     });

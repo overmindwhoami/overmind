@@ -4,6 +4,7 @@
  * fenced: a rate limit per visitor, a daily cap across everyone, short replies, and the written voice (answers.ts) when
  * there is no key, the cap is hit, or the call fails.
  */
+import { claude, modelId } from './claude.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { answer, type Facts } from './answers.js';
 import { currentDisk, diskSaves, qday, recentSaves } from './db.js';
@@ -11,7 +12,7 @@ import { LP_LIVE } from './lp/solana.js';
 import { lutAddress } from './lp/lut.js';
 
 const MODEL = process.env.CHAT_MODEL ?? 'claude-haiku-5-5';
-const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ maxRetries: 1, timeout: 25_000 }) : undefined;
+const client = claude({ maxRetries: 1, timeout: 25_000 });
 const PER_VISITOR = Number(process.env.CHAT_PER_10MIN ?? 12); // messages per visitor per 10 minutes
 const DAILY = Number(process.env.CHAT_DAILY_CAP ?? 3000); // replies a day across everyone
 const MAX_IN = 400; // characters a visitor can send
@@ -76,7 +77,7 @@ export async function talk(ip: string, history: { role: 'user' | 'assistant'; co
 
   try {
     const res = await client.messages.create({
-      model: MODEL, max_tokens: 220,
+      model: modelId(MODEL), max_tokens: 220,
       system: [{ type: 'text', text: SYSTEM }, { type: 'text', text: `Right now:\n${context}` }],
       messages: msgs,
     });
