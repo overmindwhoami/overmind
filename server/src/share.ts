@@ -42,7 +42,7 @@ export async function diskCard(d: DiskRow, slots: SlotRow[], pick?: SlotRow): Pr
   const name = `DISK ${String(d.n + 1).padStart(4, '0')}`;
   const last = pick ?? [...slots].reverse().find((s) => s.item) ?? slots[slots.length - 1];
   const title = last?.item?.title ?? 'nothing came through';
-  const note = wrap(last?.note ?? '', 52, 3);
+  const note = wrap(last?.note ?? '', 52, pick ? 4 : 3);
   const inner = `
 <text x="64" y="200" font-family="Menlo, monospace" font-size="92" font-weight="700" fill="#f2f2f2">${esc(name)}</text>
 <text x="64" y="252" font-family="Menlo, monospace" font-size="26" fill="#8a8a8a">${pick ? `minute ${pick.k + 1} of 90 · ` : ''}${d.sealed_at ? `sealed · sha256 ${esc((d.fingerprint ?? '').slice(0, pick ? 16 : 24))}…` : `writing now · ${d.written} of 90`}</text>
