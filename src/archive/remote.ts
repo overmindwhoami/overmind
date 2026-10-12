@@ -194,16 +194,20 @@ export class RemoteArchive implements Archive {
     try { records = (JSON.parse(text) as unknown[]).length; } catch { /* counted as 0 */ }
     const chain: Verification['chain'] = { state: d?.chain?.tx ? 'unreachable' : d?.chain?.pending ? 'pending' : 'none', tx: d?.chain?.tx, url: d?.chain?.url };
     if (d?.chain?.tx) {
-      try {
-        const rpc = RPC[d.chain.cluster ?? 'mainnet-beta'] ?? RPC['mainnet-beta'];
+      // the seal's logs: through the service (the public RPC refuses browsers), else straight from the public RPC. Either
+      // way the comparison is made here, against the hash this browser worked out; the explorer link checks it independently.
+      const fromService = async () => ((await (await fetch(`${this.base}/api/tx/${d.chain!.tx}`)).json()) as { logs?: string[] | null }).logs ?? undefined;
+      const fromRpc = async () => {
+        const rpc = RPC[d.chain!.cluster ?? 'mainnet-beta'] ?? RPC['mainnet-beta'];
         const r = await fetch(rpc, {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTransaction', params: [d.chain.tx, { encoding: 'json', maxSupportedTransactionVersion: 0, commitment: 'confirmed' }] }),
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTransaction', params: [d.chain!.tx, { encoding: 'json', maxSupportedTransactionVersion: 0, commitment: 'confirmed' }] }),
         });
-        const tx = (await r.json()) as { result?: { meta?: { logMessages?: string[] } } };
-        const memo = tx.result?.meta?.logMessages?.find((l) => l.includes('Memo'));
-        if (memo) chain.state = memo.includes(`sha256:${hash}`) ? 'match' : 'mismatch';
-      } catch { /* stays unreachable */ }
+        return ((await r.json()) as { result?: { meta?: { logMessages?: string[] } } }).result?.meta?.logMessages;
+      };
+      const logs = (await fromService().catch(() => undefined)) ?? (await fromRpc().catch(() => undefined));
+      const memo = logs?.find((l) => l.includes('Memo'));
+      if (memo) chain.state = memo.includes(`sha256:${hash}`) ? 'match' : 'mismatch';
     }
     return { bytes: bytes.length, records, hash, sealed, match: hash === sealed, chain };
   }

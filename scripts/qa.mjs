@@ -178,9 +178,12 @@ async function run(tag, contextOptions) {
     const t = await text('.mint .sheet__eyebrow');
     return /COMING SOON/.test(t ?? '') && controls === 0 ? t : `${t} · ${controls} controls` && false;
   });
-  if (!PREVIEW) await step('launch, while closed: no wallet to connect', async () => {
-    await go('launch'); await page.waitForTimeout(1500);
-    return (await page.$$('.lp__form [data-wallet], .lp__wallets a')).length === 0 ? await text('.lp__form [data-go]') : false;
+  if (!PREVIEW) await step('launch: open, the form ready for a wallet', async () => {
+    await go('launch'); await page.waitForTimeout(2500);
+    const button = await text('.lp__form [data-go]');
+    // no wallet in a test browser: desktop says to install one, a phone offers to open the page in a wallet's browser
+    const offer = (await page.$$('.lp__wallets a')).length > 0 || /no solana wallet/.test((await text('.lp__form')) ?? '');
+    return /connect a wallet to launch/.test(button ?? '') && offer ? button : `${button}` && false;
   });
   await step('the ticker: tapping it follows', async () => {
     for (let i = 0; i < 12 && !(await page.$('.here__go')); i++) await page.waitForTimeout(1500);

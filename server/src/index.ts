@@ -23,7 +23,7 @@ import { RPC_URL as LP_RPC, DAS_URL } from './lp/solana.js';
 import { createServer, type ServerResponse } from 'node:http';
 import { countCheck, currentDisk, disks, migrate, pool, slots, type DiskRow, type SlotRow } from './db.js';
 import { anchorPending, ensureDisk, events, round, SLOTS } from './archivist.js';
-import { balanceOf, explorer, signer, walletInfo } from './chain.js';
+import { balanceOf, explorer, signer, txLogs, walletInfo } from './chain.js';
 import { coin } from './coin.js';
 import { recordText } from './seal.js';
 import { floppyImage } from './floppy-image.js';
@@ -205,6 +205,13 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' });
       return res.end(sharePage({ title: `$${c.ticker} on the Overmind's wall`, description: c.note ?? `${c.name}: its holders are written down and sealed, so ownership can be proven after Q-Day.`,
         image: `${site}/c/${c.mint}/card.png`, to: `${site}/#coin-${c.mint}` }));
+    }
+    // a seal's logs, for the browser's CHECK (it compares the memo with the hash it worked out itself)
+    const txPath = path.match(/^\/api\/tx\/([1-9A-HJ-NP-Za-km-z]{80,90})$/);
+    if (txPath) {
+      if (!within(`tx:${ip}`, 30, 60_000)) return send(res, 429, { error: 'busy' });
+      const logs = await txLogs(txPath[1]).catch(() => null);
+      return send(res, logs ? 200 : 404, { logs });
     }
     const imgPath = path.match(/^\/api\/disks\/(\d+)\/image$/);
     if (imgPath) {

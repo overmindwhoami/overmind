@@ -69,6 +69,17 @@ export async function memo(text: string): Promise<string> {
 }
 export const record = (n: number, fingerprint: string) => memo(memoFor(n, fingerprint));
 
+/** A seal's transaction logs, for browsers checking a disk (the public RPC refuses them now); a confirmed one never changes. */
+const sealLogs = new Map<string, string[]>();
+export async function txLogs(sig: string): Promise<string[] | null> {
+  const known = sealLogs.get(sig);
+  if (known) return known;
+  const tx = await connection.getTransaction(sig, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
+  const logs = tx?.meta?.logMessages ?? null;
+  if (logs) { sealLogs.set(sig, logs); if (sealLogs.size > 2000) sealLogs.delete(sealLogs.keys().next().value!); }
+  return logs;
+}
+
 /** Devnet and testnet only: asks the public faucet for test SOL (worthless; rate-limited). */
 export async function airdrop(sol = 1) {
   if (CLUSTER === 'mainnet-beta') throw new Error('no faucet on mainnet');
