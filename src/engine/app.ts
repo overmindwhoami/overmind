@@ -23,6 +23,7 @@ import { PAGE_COUNT, drawPage, pages, type Receipts } from '../machine/docs';
 import { Terminal } from '../ui/terminal';
 import { Launchpad, type LpCoin } from '../archive/launchpad';
 import { CoinSheet, LaunchSheet } from '../ui/launchpad';
+import { BooksSheet } from '../ui/books';
 import spec from './tower-spec.json';
 
 const INTERFACE = 'a, button, .lil-gui, .sheet';
@@ -59,7 +60,6 @@ const WORDS = {
 const SETTLED_TOWER: Line[] = [{ text: WORDS.thesis }, { text: WORDS.minute }, { text: WORDS.tower, kind: 'hint', check: true, tour: true }];
 /** What the Overmind says at the places that have no panel of their own. */
 const PLACE_LINES: Partial<Record<PlaceName, Line[]>> = {
-  omd: [{ text: "my coin's board. it shows the numbers once $OMD exists: market cap, a day's volume, a day's change. only numbers that add up.", kind: 'voice' }],
   mint: [{ text: "lifeboat tickets: a quantum-safe key for your wallet, one a disk. not yet. a ticket would hold your money, so it gets audited first.", kind: 'voice' }],
 };
 const SETTLED_ROOM: Line[] = [{ text: WORDS.thesis }, { text: WORDS.qday }, { text: WORDS.room, kind: 'hint', check: true, tour: true }];
@@ -267,6 +267,7 @@ export class App {
       toWall: (mint) => this.openCoin(mint),
       launched: () => void this.refreshCoins(),
     });
+    this.books = new BooksSheet(endpoint, () => this.coin?.mint ? "my coin's board: $OMD's market cap, a day's volume and a day's change. only numbers that add up." : "my coin's board. it shows $OMD's numbers once it exists: market cap, a day's volume, a day's change.");
     this.coinSheet = new CoinSheet(this.lp, { launch: () => this.go('launch'), close: () => { this.coinSheet.about(this.coins, this.lpStatus); if (window.location.hash.startsWith('#coin-')) history.replaceState(null, '', '#explorer'); } });
     const form = document.querySelector<HTMLFormElement>('[data-term]'), field = form?.querySelector<HTMLInputElement>('input');
     field?.addEventListener('input', () => { this.terminal.input = field.value; this.station.touch(); });
@@ -712,6 +713,7 @@ export class App {
   private launchSheet!: LaunchSheet;
   private coinSheet!: CoinSheet;
   private coins: LpCoin[] = [];
+  private books!: BooksSheet;
   private lpStatus?: { snapshotHours: number; split: { treasury: number; launcher: number } };
   private sheetRaise = 0;
   private async refreshCoins() {
@@ -781,6 +783,7 @@ export class App {
       if (name === 'terminal') this.termForm.querySelector('input')?.focus({ preventScroll: true });
     }
     if (name === 'launch') void this.launchSheet.show(); else this.launchSheet.hide();
+    if (name === 'omd') void this.books.show(); else this.books.hide();
     if (name === 'explorer') { if (this.lp && !this.coinSheet.showing) this.coinSheet.about(this.coins, this.lpStatus); } else this.coinSheet.hide();
     window.dispatchEvent(new Event('placechange')); // the menu marks where the camera is going
     this.updatePager();
@@ -800,7 +803,7 @@ export class App {
     else if (this.place === 'terminal') { const r = this.station.readerCamera(this.camera, window.innerWidth <= 640 && this.camera.aspect < 0.8 ? 0.5 : 0); pos = r.pos; look = r.look; focus = r.distance; }
     else { const v = this.room.view(this.place, this.camera, this.place === 'room' ? this.roomYaw : 0); pos = v.pos; look = v.look; focus = v.distance; if ('up' in v && v.up) up = v.up; }
     // a phone with a launchpad sheet open: the object rises into the top of the frame, clear of the sheet
-    const sheet = this.camera.aspect < 0.8 ? (this.place === 'launch' && !this.launchSheet.root.hidden ? 0.55 : this.place === 'explorer' && !this.coinSheet.root.hidden ? 0.5 : 0) : 0;
+    const sheet = this.camera.aspect < 0.8 ? (this.place === 'launch' && !this.launchSheet.root.hidden ? 0.55 : this.place === 'explorer' && !this.coinSheet.root.hidden ? 0.5 : this.place === 'omd' && !this.books.root.hidden ? 0.5 : 0) : 0;
     this.sheetRaise += (sheet - this.sheetRaise) * (1 - Math.exp(-dt * 6));
     if (this.sheetRaise > 0.001 && this.place !== 'tower') {
       const shift = up.clone().multiplyScalar(-this.sheetRaise * focus * Math.tan((this.camera.fov * Math.PI) / 360));

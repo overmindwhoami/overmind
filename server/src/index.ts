@@ -10,6 +10,7 @@
  *   POST /api/activity          {kind: open|share, disk, v} or {kind: docs, v}: what a visitor did, told to the room (no free text)
  *   GET /api/disks/:n/image     a sealed disk as a real 1.44 MB FAT12 floppy image (mounts in DOSBox or an emulator)
  *   GET /d/:n, /c/:mint (+ /card.png)  share links: a preview card for X/Telegram, then on into the room (CloudFront routes them here)
+ *   GET /api/books              every wallet the Overmind uses: balance, in, out, recent moves, and whether it adds up
  *   GET /api/coin               $OMD's numbers for the board (DexScreener, cached a minute; none until OMD_MINT is set)
  *   GET /media/:key             the instrument's stills and loops (CORS, immutable)
  * ROUND_EVERY_MS overrides the minute (local testing only).
@@ -35,6 +36,7 @@ import { migrateLaunchpad } from './lp/coins.js';
 import { count, migrateStats, stats, statsPage } from './stats.js';
 import { scheduleBackups } from './backup.js';
 import { startPosting } from './post.js';
+import { books, migrateBooks } from './books.js';
 import { createHash } from 'node:crypto';
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -143,6 +145,7 @@ const server = createServer(async (req, res) => {
       return sol === undefined ? send(res, 502, { error: 'no answer' }) : send(res, 200, { address, sol });
     }
     if (path === '/api/coin') return send(res, 200, await coin());
+    if (path === '/api/books') return send(res, 200, await books());
     if (path === '/stats' || path === '/api/stats') { // the owner's numbers, behind the key the server made for itself
       if (url.searchParams.get('key') !== statsKey) return send(res, 404, { error: 'not found' });
       const s = await stats();
@@ -313,6 +316,7 @@ await migrate();
 await migrateNominations();
 await migrateLaunchpad();
 const statsKey = await migrateStats();
+await migrateBooks();
 scheduleBackups();
 startPosting();
 setInterval(() => { lpJobs().catch((e) => console.warn('launchpad jobs failed', e)); }, 5 * 60_000);

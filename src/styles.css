@@ -102,7 +102,7 @@ html[data-place='room'] .on-tower, html:not([data-place='room']) .on-room { disp
   grid-area: 3 / 1; align-self: end; max-width: 560px; margin: 0; font-size: var(--text-lead); letter-spacing: var(--tracking-ui); line-height: var(--leading-lead); display: none;
   text-shadow: 0 0 14px rgb(0 0 0 / 95%), 0 0 3px rgb(0 0 0 / 90%); /* legible over a bright disk */
 }
-html[data-place='room'] .story, html[data-place='tower'] .story, html[data-place='omd'] .story, html[data-place='mint'] .story, html[data-intro] .story { display: block; }
+html[data-place='room'] .story, html[data-place='tower'] .story, html[data-place='mint'] .story, html[data-intro] .story { display: block; }
 html[data-place='room'] .copy, html[data-place='tower'] .copy, html[data-intro] .copy, html[data-intro] .back { display: none; }
 .is-reading .story { opacity: 0; transition: opacity var(--dur-ui); }
 .story__line { margin: 0 0 8px; transition: opacity 600ms var(--ease-expo-out), transform 600ms var(--ease-expo-out); }
@@ -489,3 +489,9 @@ a.share[data-image]::before { content: '↓ '; }
   .sheet { top: auto; left: 12px; right: 12px; width: auto; bottom: calc(66px + env(safe-area-inset-bottom, 0px)); max-height: 58dvh; padding: 16px 14px 12px; }
   .sheet__input { font-size: 16px; }
 }
+.books__wallet { padding: 12px 0 4px; border-top: 1px solid rgb(242 242 242 / 10%); }
+.books__name { margin: 0 0 4px !important; font-weight: 700; }
+.books__name a { margin-left: 6px; color: var(--color-text-secondary); font-weight: 400; text-decoration: none; }
+.books__check { color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 0.9em; }
+.books__check.is-ok { color: #7ad27a; }
+.books__in { color: #7ad27a; }
