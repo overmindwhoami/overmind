@@ -20,7 +20,25 @@ import { connection, JITO, jitoTipIx, LP_LAUNCHER_BPS, LP_TREASURY_BPS, PUBLIC_A
 
 export class LaunchError extends Error {}
 
-export interface LaunchInput { wallet: string; name: string; ticker: string; description?: string; image?: string }
+export interface Links { website?: string; twitter?: string }
+export interface LaunchInput { wallet: string; name: string; ticker: string; description?: string; image?: string; links?: Links }
+
+/** A launcher's links (their X and their website), made canonical; pump.fun shows them on the coin. Anything else is dropped. */
+export function linksOf(l: unknown): Links {
+  const o = (l && typeof l === 'object' ? l : {}) as Record<string, unknown>;
+  const s = (v: unknown) => String(v ?? '').trim().slice(0, 200);
+  const out: Links = {};
+  const site = s(o.website);
+  if (site) {
+    let u: URL;
+    try { u = new URL(/^https?:\/\//i.test(site) ? site : `https://${site}`); } catch { throw new LaunchError('That website doesn’t look like a link.'); }
+    if (!/^https?:$/.test(u.protocol) || !u.hostname.includes('.')) throw new LaunchError('That website doesn’t look like a link.');
+    out.website = u.toString();
+  }
+  const x = s(o.twitter).replace(/^@/, '').replace(/^(https?:\/\/)?(www\.)?(x|twitter)\.com\//i, '').replace(/[/?#].*$/, '');
+  if (x) { if (!/^[A-Za-z0-9_]{1,15}$/.test(x)) throw new LaunchError('The X handle should be letters, numbers or _ (at most 15).'); out.twitter = `https://x.com/${x}`; }
+  return out;
+}
 
 /** pump makes the config's admin (the treasury) fund the fee-sharing account and grow the curve; the launcher pays it back. */
 const SHARING_CONFIG_BYTES = 1024, CURVE_GROWTH_BYTES = 26;
@@ -48,7 +66,7 @@ export function validate(i: Partial<LaunchInput>): LaunchInput {
   const description = String(i.description ?? '').replace(/\s+/g, ' ').trim().slice(0, 280);
   // only images uploaded here (the metadata points at our copy, so it can't change after launch)
   const image = typeof i.image === 'string' && new RegExp(`^${PUBLIC_API.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/api/lp/media/[a-f0-9]{64}$`).test(i.image) ? i.image : undefined;
-  return { wallet, name, ticker, description, image };
+  return { wallet, name, ticker, description, image, links: linksOf(i.links) };
 }
 
 async function lookupTable(): Promise<AddressLookupTableAccount> {
@@ -111,8 +129,8 @@ export async function buildLaunch(raw: Partial<LaunchInput>, opts: { lut?: Addre
   // treasury sign at submit, only this exact message
   const launchMsg = sha256(plan[0].message.serialize());
   await pool.query(
-    `insert into lp_coins (mint, name, ticker, description, image, launcher, status, launch_msg, mint_secret) values ($1,$2,$3,$4,$5,$6,'pending',$7,$8)`,
-    [mint.publicKey.toBase58(), i.name, i.ticker, i.description || null, i.image ?? null, i.wallet, launchMsg, bs58.encode(mint.secretKey)],
+    `insert into lp_coins (mint, name, ticker, description, image, launcher, status, launch_msg, mint_secret, links) values ($1,$2,$3,$4,$5,$6,'pending',$7,$8,$9)`,
+    [mint.publicKey.toBase58(), i.name, i.ticker, i.description || null, i.image ?? null, i.wallet, launchMsg, bs58.encode(mint.secretKey), i.links && Object.keys(i.links).length ? i.links : null],
   );
   return { mint: mint.publicKey.toBase58(), txs: plan.map((x) => Buffer.from(x.serialize()).toString('base64')) };
 }

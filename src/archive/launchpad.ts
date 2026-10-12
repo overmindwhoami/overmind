@@ -6,6 +6,7 @@ export interface LpSnapshot { n: number; at: number; slot: number; holders: numb
 export interface LpCoin {
   mint: string; name: string; ticker: string; description: string | null; image: string | null; launcher: string; note: string | null;
   liveAt: number; snapshots: number; holders: number | null; lastSnapshotAt: number | null; sig: string | null; pump: string;
+  links?: { website?: string; twitter?: string }; page?: string;
   snapshotList?: LpSnapshot[];
 }
 export interface LpStatus { open: boolean; treasury: string; split: { treasury: number; launcher: number }; snapshotHours: number; costSol: number }
@@ -28,7 +29,7 @@ export class Launchpad {
   /** The exact text a snapshot's fingerprint is the SHA-256 of. */
   async record(mint: string, n: number) { const r = await fetch(`${this.base}/api/lp/coins/${mint}/snapshots/${n}/record`); if (!r.ok) throw new Error(String(r.status)); return r.text(); }
   upload(image: Blob) { return this.call<{ id: string; url: string }>('media', { method: 'POST', headers: { 'content-type': image.type }, body: image }); }
-  launch(input: { wallet: string; name: string; ticker: string; description?: string; image?: string }) { return this.post<{ mint: string; txs: string[] }>('launch', input); }
+  launch(input: { wallet: string; name: string; ticker: string; description?: string; image?: string; links?: { website?: string; twitter?: string } }) { return this.post<{ mint: string; txs: string[] }>('launch', input); }
   submit(mint: string, signed: string[]) { return this.post<Sent>('launch/submit', { mint, signed }); }
   confirm(mint: string, sig: string) { return this.post<Sent>('launch/confirm', { mint, sig }); }
   buy(wallet: string, mint: string, sol: number) { return this.post<{ txs: string[]; tokens: string }>('buy', { wallet, mint, sol }); }

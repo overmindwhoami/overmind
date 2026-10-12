@@ -26,6 +26,7 @@ export async function migrateLaunchpad() {
       live_at timestamptz
     );
     create index if not exists lp_coins_live on lp_coins (status, live_at);
+    alter table lp_coins add column if not exists links jsonb;
     create table if not exists lp_media (
       id text primary key,
       mime text not null,
@@ -50,9 +51,9 @@ export async function migrateLaunchpad() {
 
 export interface CoinRow {
   mint: string; name: string; ticker: string; description: string | null; image: string | null; launcher: string; status: string;
-  create_sig: string | null; note: string | null; created_at: string; live_at: string | null; snapshots: number; holders: number | null; last_at: string | null;
+  create_sig: string | null; note: string | null; created_at: string; live_at: string | null; links: { website?: string; twitter?: string } | null; snapshots: number; holders: number | null; last_at: string | null;
 }
-const COIN = `select c.mint, c.name, c.ticker, c.description, c.image, c.launcher, c.status, c.create_sig, c.note, c.created_at, c.live_at,
+const COIN = `select c.mint, c.name, c.ticker, c.description, c.image, c.launcher, c.status, c.create_sig, c.note, c.created_at, c.live_at, c.links,
   (select count(*)::int from lp_snapshots s where s.mint = c.mint) as snapshots,
   (select s.holders from lp_snapshots s where s.mint = c.mint order by n desc limit 1) as holders,
   (select s.at from lp_snapshots s where s.mint = c.mint order by n desc limit 1) as last_at
@@ -61,7 +62,7 @@ const COIN = `select c.mint, c.name, c.ticker, c.description, c.image, c.launche
 export const coinJson = (c: CoinRow) => ({
   mint: c.mint, name: c.name, ticker: c.ticker, description: c.description, image: c.image, launcher: c.launcher, note: c.note,
   liveAt: c.live_at ? +new Date(c.live_at) : null, snapshots: c.snapshots, holders: c.holders, lastSnapshotAt: c.last_at ? +new Date(c.last_at) : null,
-  sig: c.create_sig, pump: `https://pump.fun/coin/${c.mint}`,
+  sig: c.create_sig, pump: `https://pump.fun/coin/${c.mint}`, links: c.links ?? {}, page: `${SITE}/c/${c.mint}`,
 });
 
 /** Live coins in launch order (the wall fills from the first). */
@@ -95,8 +96,10 @@ export async function metadata(mint: string) {
   if (!c) return undefined;
   return {
     name: c.name, symbol: c.ticker, image: c.image ?? `${SITE}/icon-512.png`, showName: true, createdOn: SITE,
-    description: `${c.description ? `${c.description}\n\n` : ''}Launched through the Overmind: its disk is on the wall at ${SITE}, and who holds it is written down every few hours and sealed, so ownership can be proven after Q-Day.`,
-    website: `${SITE}/#coin-${mint}`,
+    description: `${c.description ? `${c.description}\n\n` : ''}Launched through the Overmind: its disk is on the wall at ${SITE}/c/${mint}, and who holds it is written down every few hours and sealed, so ownership can be proven after Q-Day.`,
+    // pump.fun shows one website: the launcher's own if they gave one (its overmind page is in the description), else its overmind page
+    website: c.links?.website ?? `${SITE}/c/${mint}`,
+    ...(c.links?.twitter ? { twitter: c.links.twitter } : {}),
   };
 }
 

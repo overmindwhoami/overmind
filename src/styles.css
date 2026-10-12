@@ -470,6 +470,11 @@ a.share[data-image]::before { content: '↓ '; }
 .lp__image span { display: grid; place-items: center; width: 100%; height: 100%; background: center / cover no-repeat; pointer-events: none; }
 .lp__image span.has-image { border-radius: 7px; }
 .lp__fields { display: grid; gap: 8px; align-content: start; }
+.lp__links { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 640px) { .lp__links { grid-template-columns: 1fr; } }
+.coin__links { display: flex; gap: 20px; margin: 0; color: rgb(242 242 242 / 60%); }
+.coin__links a { color: inherit; text-decoration: none; }
+.coin__links a:hover { color: rgb(242 242 242); }
 .lp__ticker { display: flex; align-items: center; gap: 6px; color: var(--color-text-secondary); }
 .lp__ticker input { text-transform: uppercase; }
 .lp__wallets { display: flex; flex-wrap: wrap; gap: 8px; }

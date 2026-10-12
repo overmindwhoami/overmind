@@ -10,6 +10,14 @@ import { b64ToBytes, bytesToB64, type Launchpad, type LpCoin, type LpStatus, typ
 import { connect, onWallets, session, short, signAll, walletBrowserLinks, wallets } from './wallet';
 
 const DRAFT = 'overmind.launch-draft';
+interface Draft { name: string; ticker: string; about: string; x: string; web: string }
+const EMPTY: Draft = { name: '', ticker: '', about: '', x: '', web: '' };
+/** A coin's own links (its X and website), as the launcher gave them; only web links are drawn. */
+const linkRow = (l: LpCoin['links']) => {
+  const safe = (u?: string) => (u && /^https?:\/\//.test(u) ? u : undefined);
+  const items = ([['x', safe(l?.twitter)], ['website', safe(l?.website)]] as const).filter(([, u]) => u);
+  return items.length ? `<p class="coin__links">${items.map(([k, u]) => `<a href="${esc(u!)}" target="_blank" rel="noopener nofollow ugc">${k} ↗</a>`).join('')}</p>` : '';
+};
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const touch = () => window.matchMedia('(pointer: coarse)').matches;
@@ -59,10 +67,10 @@ export class LaunchSheet {
   }
   hide() { this.root.hidden = true; }
 
-  private draft(): { name: string; ticker: string; about: string } {
-    try { return { name: '', ticker: '', about: '', ...JSON.parse(localStorage.getItem(DRAFT) ?? '{}') }; } catch { return { name: '', ticker: '', about: '' }; }
+  private draft(): Draft {
+    try { return { ...EMPTY, ...JSON.parse(localStorage.getItem(DRAFT) ?? '{}') }; } catch { return { ...EMPTY }; }
   }
-  private save(d: { name: string; ticker: string; about: string }) { try { localStorage.setItem(DRAFT, JSON.stringify(d)); } catch { /* fine */ } }
+  private save(d: Draft) { try { localStorage.setItem(DRAFT, JSON.stringify(d)); } catch { /* fine */ } }
   private lcdIdle() {
     const d = this.draft();
     if (this.done) this.hooks.lcd(`$${this.done.ticker}`, 'ON THE WALL');
@@ -113,6 +121,10 @@ export class LaunchSheet {
           <label class="lp__ticker"><span aria-hidden="true">$</span><input class="sheet__input" name="ticker" placeholder="TICKER" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${esc(d.ticker)}" aria-label="Ticker"></label>
         </div>
         <textarea class="sheet__input lp__about" name="about" rows="2" maxlength="280" placeholder="what is it about? (optional: the overmind reads it)" aria-label="What is it about">${esc(d.about)}</textarea>
+        <div class="lp__links">
+          <input class="sheet__input" name="x" placeholder="x @handle (optional)" maxlength="60" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(d.x)}" aria-label="X handle (optional)">
+          <input class="sheet__input" name="web" placeholder="website (optional)" maxlength="200" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(d.web)}" aria-label="Website (optional)">
+        </div>
         ${walletRow}
         <button class="sheet__btn sheet__btn--primary lp__go" type="submit" data-go ${open && session.wallet && !this.busy ? '' : 'disabled'}>${!this.lp ? 'the launchpad lives on the real server' : open ? (session.wallet ? `launch · about ${this.status?.costSol ?? 0.03} SOL` : 'connect a wallet to launch') : 'opens after $OMD launches'}</button>
         <p class="sheet__say${this.error ? ' is-error' : ''}" data-say aria-live="polite">${esc(this.message)}</p>
@@ -125,7 +137,7 @@ export class LaunchSheet {
       const ticker = String(f.get('ticker') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
       const t = form.elements.namedItem('ticker') as HTMLInputElement;
       if (t.value !== ticker) t.value = ticker;
-      this.save({ name: String(f.get('name') ?? ''), ticker, about: String(f.get('about') ?? '') });
+      this.save({ name: String(f.get('name') ?? ''), ticker, about: String(f.get('about') ?? ''), x: String(f.get('x') ?? ''), web: String(f.get('web') ?? '') });
       this.lcdIdle();
     };
     form.addEventListener('input', sync);
@@ -161,7 +173,7 @@ export class LaunchSheet {
       if (this.image) { this.say('uploading the picture…'); this.hooks.lcd('UPLOADING', 'PICTURE'); image = (await this.lp.upload(this.image)).url; }
       const attempt = async () => {
         this.say('preparing your coin…'); this.hooks.lcd('PREPARING', `$${d.ticker}`);
-        const built = await this.lp!.launch({ wallet: session.wallet!.address, name: d.name.trim(), ticker: d.ticker, description: d.about.trim() || undefined, image });
+        const built = await this.lp!.launch({ wallet: session.wallet!.address, name: d.name.trim(), ticker: d.ticker, description: d.about.trim() || undefined, image, links: { twitter: d.x.trim() || undefined, website: d.web.trim() || undefined } });
         this.say(`approve it in ${session.wallet!.name}.`); this.hooks.lcd('SIGN IN', 'YOUR WALLET');
         const signed = await signAll(session.wallet!, built.txs.map(b64ToBytes));
         this.say('sending it to solana…'); this.hooks.lcd('COPYING...', `$${d.ticker}`);
@@ -179,7 +191,7 @@ export class LaunchSheet {
       if (!r.ok) throw new Error(r.pending || r.reason === 'not confirmed yet' ? 'still confirming. it will appear on the wall once it lands; nothing needs signing again.' : r.reason ?? r.error ?? 'the launch didn’t confirm.');
       this.done = { mint: built.mint, ticker: d.ticker };
       this.image = undefined;
-      this.save({ name: '', ticker: '', about: '' });
+      this.save({ ...EMPTY });
       this.message = '';
       this.hooks.lcd(`$${d.ticker}`, 'ON THE WALL');
       this.hooks.launched();
@@ -283,7 +295,8 @@ export class CoinSheet {
       <div class="sheet__actions">
         <a class="sheet__btn sheet__btn--primary" href="${c.pump}" target="_blank" rel="noopener">pump.fun ↗</a>
         <button class="sheet__btn" data-share type="button">share</button>
-      </div>`;
+      </div>
+      ${linkRow(c.links)}`;
     this.root.querySelector('[data-close]')!.addEventListener('click', () => this.hooks.close());
     this.root.querySelector('[data-share]')!.addEventListener('click', async (e) => {
       const url = /(^|\.)overmind\.im$/.test(window.location.hostname) ? `https://overmind.im/c/${c.mint}` : `${window.location.origin}${window.location.pathname}#coin-${c.mint}`;

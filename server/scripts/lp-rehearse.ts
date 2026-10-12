@@ -179,7 +179,7 @@ async function child() {
 
     // 3. the launch: built, signed by the launcher's wallet, co-signed by the server, sent
     const launcher = K.launcher.publicKey.toBase58();
-    const built = await L.buildLaunch({ wallet: launcher, name: 'Overmind rehearsal', ticker: 'RHRSL', description: 'a test coin on a local copy of mainnet', image: 'url' in img ? img.url : undefined });
+    const built = await L.buildLaunch({ wallet: launcher, name: 'Overmind rehearsal', ticker: 'RHRSL', description: 'a test coin on a local copy of mainnet', image: 'url' in img ? img.url : undefined, links: { twitter: '@overmind_test', website: 'example.com/omd' } });
     const signed = built.txs.map((b) => { const t = VersionedTransaction.deserialize(Buffer.from(b, 'base64')); t.sign([K.launcher]); return t; });
     for (const t of signed) await ensure(t);
     check('two transactions, each under the size limit', signed.length === 2 && signed.every((t) => t.serialize().length <= 1232), signed.map((t) => t.serialize().length).join('/') + ' bytes');
@@ -218,6 +218,10 @@ async function child() {
     check('the Overmind wrote a note on it', !!c?.note, c?.note ?? '');
     const meta = await coins.metadata(built.mint);
     check('token metadata served', meta?.symbol === 'RHRSL' && !!meta.image, meta?.image);
+    check('its X and website are in the metadata (pump.fun shows them)', meta?.twitter === 'https://x.com/overmind_test' && meta?.website === 'https://example.com/omd', `${meta?.twitter} ${meta?.website}`);
+    let refused = '';
+    try { await L.buildLaunch({ wallet: launcher, name: 'Bad link', ticker: 'BADL', links: { website: 'javascript:alert(1)' } }); } catch (e) { refused = (e as Error).message; }
+    check('a bad link is refused before anything is built', /website/.test(refused), refused);
 
     // 5. buys: the launcher's first buy, then three traders
     for (const [name, k, sol] of [['launcher', K.launcher, 1], ['trader-1', K.traders[0], 0.5], ['trader-2', K.traders[1], 0.25], ['trader-3', K.traders[2], 2]] as const) {

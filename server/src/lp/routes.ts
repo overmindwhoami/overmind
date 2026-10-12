@@ -8,7 +8,7 @@
  *   GET  coins                          live coins in launch order (the explorer wall)
  *   GET  coins/:mint                    one coin, with its snapshots
  *   GET  coins/:mint/snapshots/:n/record   the exact text a snapshot's fingerprint is the SHA-256 of
- *   POST launch {wallet, name, ticker, description?, image?}   → { mint, txs } to sign
+ *   POST launch {wallet, name, ticker, description?, image?, links?: {website, twitter}}   → { mint, txs } to sign
  *   POST launch/submit {mint, signed[2]}   co-sign, send, confirm (or { pending, sig } to keep checking)
  *   POST launch/confirm {mint, sig}
  *   POST buy {wallet, mint, sol}  → { txs };  POST buy/submit {signed[1]}
@@ -98,7 +98,7 @@ export async function lpRoute(req: IncomingMessage, path: string, ip: string): P
     }
     if (path === 'launch') {
       if (!LP_LIVE) return bad(403, 'The launchpad opens after $OMD launches.');
-      const input = await readJson<{ wallet: string; name: string; ticker: string; description: string; image: string }>(req, 8_000);
+      const input = await readJson<{ wallet: string; name: string; ticker: string; description: string; image: string; links?: Record<string, string> }>(req, 8_000);
       if (!allow(`launch:${ip}`, 6, 10 * 60_000) || !allow(`launch:${input.wallet}`, 1, 15_000) || !allow('launch:all', 120, 3_600_000)) return bad(429, 'One launch at a time: try again in a few seconds.');
       return json(await buildLaunch(input));
     }
