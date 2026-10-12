@@ -275,7 +275,7 @@ export class CoinSheet {
       </div>`;
     this.root.querySelector('[data-close]')!.addEventListener('click', () => { this.hide(); this.hooks.close(); });
     this.root.querySelector('[data-share]')!.addEventListener('click', async (e) => {
-      const url = `${window.location.origin}${window.location.pathname}#coin-${c.mint}`;
+      const url = /(^|\.)overmind\.im$/.test(window.location.hostname) ? `https://overmind.im/c/${c.mint}` : `${window.location.origin}${window.location.pathname}#coin-${c.mint}`;
       try {
         if (navigator.share && touch()) await navigator.share({ title: `$${c.ticker} on the Overmind's wall`, url });
         else { await navigator.clipboard.writeText(url); (e.target as HTMLElement).textContent = 'link copied'; }

@@ -6,6 +6,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { count } from './stats.js';
 
 export type Kind = 'open' | 'check' | 'share' | 'talk' | 'docs' | 'picked' | 'passed' | 'launch';
 export interface Activity { kind: Kind; disk?: number; match?: boolean; checks?: number; symbol?: string; by: string; at: number }
@@ -36,6 +37,7 @@ export function tell(a: Omit<Activity, 'at'>, ip: string): boolean {
   times.push(now); perIp.set(ip, times);
   if (repeats.size > 20_000) for (const [k, t] of repeats) if (now - t > 60_000) repeats.delete(k);
   if (perIp.size > 20_000) for (const [k, t] of perIp) if (!t.some((x) => now - x < 60_000)) perIp.delete(k);
+  if (a.kind !== 'talk' && a.kind !== 'passed') count(a.kind);
   const ev: Activity = { ...a, at: now };
   recent.push(ev);
   if (recent.length > 12) recent.shift();

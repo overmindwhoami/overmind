@@ -4,6 +4,7 @@
  * moment before they go out, so a reload doesn't flicker the number for everyone.
  */
 import { EventEmitter } from 'node:events';
+import { peak, seen } from './stats.js';
 
 const open = new Map<string, number>(); // visitor → open streams
 export const presenceEvents = new EventEmitter();
@@ -16,6 +17,8 @@ export const here = () => open.size;
 export function arrive(id: string | null): () => void {
   const v = id && /^[a-z0-9]{6,32}$/i.test(id) ? id : `anon-${++anon}`;
   open.set(v, (open.get(v) ?? 0) + 1);
+  if (id) seen(v);
+  peak(open.size);
   changed();
   return () => {
     const n = (open.get(v) ?? 1) - 1;

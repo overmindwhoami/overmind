@@ -32,8 +32,10 @@ export async function migrateNominations() {
 const clean = (s: unknown) => String(Array.isArray(s) ? s[0] : s ?? '').replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"')
   .replace(/&#0?39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&[a-z#0-9]+;/g, ' ').replace(/\s+/g, ' ').trim();
 const excerpt = (s: unknown, n = 420) => { const t = clean(s); return t.length <= n ? t : t.slice(0, t.lastIndexOf(' ', n)) + '…'; };
+const CURATED = /(^|\.)(archive\.org|wikipedia\.org|arxiv\.org|iacr\.org|gutenberg\.org|loc\.gov)$/;
 const get = async (url: string) => {
   const res = await fetch(url, { headers: UA, signal: AbortSignal.timeout(10_000), redirect: 'follow' });
+  if (!CURATED.test(new URL(res.url).hostname)) throw new Error("that link leads somewhere i don't read from.");
   if (!res.ok) throw new Error(String(res.status));
   return res;
 };

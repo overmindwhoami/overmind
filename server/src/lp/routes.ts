@@ -91,6 +91,7 @@ export async function lpRoute(req: IncomingMessage, path: string, ip: string): P
     if (req.method !== 'POST') return bad(405, 'method');
 
     if (path === 'media') {
+      if (!allow('media:all', 300, 3_600_000)) return bad(429, 'Uploads are busy: try again in a little while.');
       const mime = String(req.headers['content-type'] ?? '').split(';')[0].trim();
       const r = await saveImage(await readBody(req, 1_000_000), mime, ip);
       return 'error' in r ? bad(400, r.error) : json(r);
@@ -98,7 +99,7 @@ export async function lpRoute(req: IncomingMessage, path: string, ip: string): P
     if (path === 'launch') {
       if (!LP_LIVE) return bad(403, 'The launchpad opens after $OMD launches.');
       const input = await readJson<{ wallet: string; name: string; ticker: string; description: string; image: string }>(req, 8_000);
-      if (!allow(`launch:${ip}`, 6, 10 * 60_000) || !allow(`launch:${input.wallet}`, 1, 15_000)) return bad(429, 'One launch at a time: try again in a few seconds.');
+      if (!allow(`launch:${ip}`, 6, 10 * 60_000) || !allow(`launch:${input.wallet}`, 1, 15_000) || !allow('launch:all', 120, 3_600_000)) return bad(429, 'One launch at a time: try again in a few seconds.');
       return json(await buildLaunch(input));
     }
     if (path === 'launch/submit') {

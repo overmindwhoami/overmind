@@ -949,7 +949,8 @@ export class App {
   private async share() {
     const n = this.station.disk;
     if (n === undefined || !this.dom.share) return;
-    const url = `${window.location.origin}${window.location.pathname}#disk-${n + 1}`;
+    // on overmind.im a share link previews as the disk itself (/d/15 renders its card); elsewhere it's the room's own link
+    const url = /(^|\.)overmind\.im$/.test(window.location.hostname) ? `https://overmind.im/d/${n + 1}` : `${window.location.origin}${window.location.pathname}#disk-${n + 1}`;
     const text = `${fmtDisk(n)}: what made it through, before Q-Day.`;
     this.archive.report?.('share', n);
     try {

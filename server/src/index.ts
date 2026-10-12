@@ -32,6 +32,7 @@ import { activityEvents, lately, tagOf, tell, visitorOf } from './activity.js';
 import { migrateNominations, mine, nominate } from './nominate.js';
 import { lpJobs, lpRoute } from './lp/routes.js';
 import { migrateLaunchpad } from './lp/coins.js';
+import { count, migrateStats, stats, statsPage } from './stats.js';
 import { createHash } from 'node:crypto';
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -62,13 +63,26 @@ function send(res: ServerResponse, status: number, body: unknown, headers: Recor
   res.end(JSON.stringify(body));
 }
 
+/** Simple sliding-window limits (per address, and overall where a route spends something shared). */
+const windows = new Map<string, number[]>();
+function within(key: string, n: number, ms: number): boolean {
+  const now = Date.now(), hits = (windows.get(key) ?? []).filter((t) => now - t < ms);
+  if (hits.length >= n) { windows.set(key, hits); return false; }
+  hits.push(now); windows.set(key, hits);
+  if (windows.size > 50_000) for (const [k, v] of windows) if (!v.some((t) => now - t < 3_600_000)) windows.delete(k);
+  return true;
+}
+const streams = new Map<string, number>();
+let totalStreams = 0;
+
 /** A visitor's CHECK counts once per disk per ten minutes, however many times they press it. */
 const checked = new Map<string, number>();
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
-  const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
+  // the last X-Forwarded-For entry is the one Railway's edge added; anything before it is the client's to write
+  const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',').map((s) => s.trim()).filter(Boolean).pop() ?? '';
   try {
     if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '86400' }); return res.end(); }
     // the launchpad: its own routes (reads open; launching only while LP_LIVE is on)
@@ -80,22 +94,27 @@ const server = createServer(async (req, res) => {
     }
     // the terminal: the only thing a visitor can send
     if (req.method === 'POST' && path === '/api/chat') {
+      if (!within('chat:all', 120, 60_000)) return send(res, 429, { error: 'busy' });
       let raw = '';
       for await (const chunk of req) { raw += chunk; if (raw.length > 8_000) return send(res, 413, { error: 'too long' }); }
       let body: { messages?: { role: 'user' | 'assistant'; content: string }[]; v?: string } = {};
       try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'bad json' }); }
       const r = await talk(ip, Array.isArray(body.messages) ? body.messages : []);
+      count('chat');
       if (r.status !== 'limited') tell({ kind: 'talk', by: tagOf(visitorOf(body.v, ip)) }, ip);
       return send(res, 200, r);
     }
     // a visitor's nomination: a link from a curated source, read from the source itself
     if (req.method === 'POST' && path === '/api/nominate') {
+      if (!within(`nom:${ip}`, 10, 60_000) || !within('nom:all', 60, 60_000)) return send(res, 200, { ok: false, reply: 'one at a time. try again in a minute.' });
       let raw = '';
       for await (const chunk of req) { raw += chunk; if (raw.length > 2_000) return send(res, 413, { error: 'too long' }); }
       let body: { url?: string; v?: string } = {};
       try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'bad json' }); }
       if (typeof body.url !== 'string' || !body.url.trim()) return send(res, 200, { ok: false, reply: 'give me a link: SAVE https://…' });
-      return send(res, 200, await nominate(body.url.slice(0, 500), visitorOf(body.v, ip), ip));
+      const nr = await nominate(body.url.slice(0, 500), visitorOf(body.v, ip), ip);
+      if (nr.ok) count('nominate');
+      return send(res, 200, nr);
     }
     // what a visitor did (opened or shared a disk): a kind and a number, nothing they typed
     if (req.method === 'POST' && path === '/api/activity') {
@@ -116,12 +135,21 @@ const server = createServer(async (req, res) => {
     if (path === '/api/balance') {
       const address = url.searchParams.get('address') ?? '';
       if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) return send(res, 400, { error: 'not an address' });
+      if (!within(`bal:${ip}`, 12, 60_000) || !within('bal:all', 240, 60_000)) return send(res, 429, { error: 'slow down' });
       const sol = await balanceOf(address);
       return sol === undefined ? send(res, 502, { error: 'no answer' }) : send(res, 200, { address, sol });
     }
     if (path === '/api/coin') return send(res, 200, await coin());
+    if (path === '/stats' || path === '/api/stats') { // the owner's numbers, behind the key the server made for itself
+      if (url.searchParams.get('key') !== statsKey) return send(res, 404, { error: 'not found' });
+      const s = await stats();
+      if (path === '/api/stats') return send(res, 200, s);
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      return res.end(statsPage(s));
+    }
     if (path === '/api/nominations') return send(res, 200, await mine(visitorOf(url.searchParams.get('v'), ip)));
     if (path === '/health') {
+      if (url.searchParams.has('trace')) console.log('ip trace', JSON.stringify({ xff: req.headers['x-forwarded-for'], real: req.headers['x-real-ip'], socket: req.socket.remoteAddress, chosen: ip })); // temporary: checking the proxy's headers
       const d = await currentDisk();
       return send(res, 200, { ok: true, disk: d?.n ?? null, written: d?.written ?? 0, model: process.env.ANTHROPIC_API_KEY ? MODEL : 'template (no ANTHROPIC_API_KEY)', storage, wallet: await walletInfo() });
     }
@@ -205,6 +233,9 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { disk: diskJson(d), slots: (await slots(n)).map(slotJson) }, d.sealed_at ? { 'cache-control': 'public, max-age=3600' } : {});
     }
     if (path === '/api/events') {
+      if ((streams.get(ip) ?? 0) >= 12 || totalStreams >= 4000) return send(res, 429, { error: 'too many open streams' });
+      streams.set(ip, (streams.get(ip) ?? 0) + 1); totalStreams++;
+      req.on('close', () => { const n = (streams.get(ip) ?? 1) - 1; if (n > 0) streams.set(ip, n); else streams.delete(ip); totalStreams--; });
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'access-control-allow-origin': '*' });
       res.write(`retry: 5000\n\n`);
       const emit = (type: string) => (data: unknown) => res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -279,6 +310,7 @@ async function schedule() {
 await migrate();
 await migrateNominations();
 await migrateLaunchpad();
+const statsKey = await migrateStats();
 setInterval(() => { lpJobs().catch((e) => console.warn('launchpad jobs failed', e)); }, 5 * 60_000);
 await ensureDisk();
 const w = await signer();
