@@ -51,8 +51,8 @@ function unsupported(error: unknown) {
 // ?api=URL (or VITE_ARCHIVE_API at build time) reads the live Overmind; without one, the phase 1 simulator runs
 const api = new URLSearchParams(window.location.search).get('api') ?? import.meta.env.VITE_ARCHIVE_API;
 const archive = api ? new RemoteArchive(api) : new SimArchive();
-// ?preview: everything that waits on $OMD, simulated in this browser (local development without a server gets it too)
-if (PREVIEW || !api) installPreview(archive, true);
+// local development: ?preview, or no server at all, simulates what waits on $OMD (never on the built site)
+if (import.meta.env.DEV && (PREVIEW || !api)) installPreview(archive, true);
 new IndexNav(document.querySelector('.logo'), archive);
 try {
   const app = new App(archive);

@@ -97,7 +97,7 @@ export class Terminal {
       this.say('sys', `sha256 here:      ${r.hash.slice(0, 20)}…`);
       this.say('sys', `sealed with:      ${r.sealed.slice(0, 20)}…`);
       this.say(r.match ? 'om' : 'sys', r.match ? 'MATCH. the disk is exactly what i sealed. you checked it yourself.' : 'MISMATCH. the record has changed since it was sealed.');
-      if (r.chain.state === 'pending') this.say('sys', 'on solana: pending until the sealing wallet is funded.');
+      if (r.chain.state === 'pending') this.say('sys', 'on solana: on its way. a seal lands a minute or two after a disk fills.');
       else if (r.chain.state === 'match') this.say('sys', 'on solana: the memo says the same.');
     } catch { this.say('om', "i couldn't reach the archive. try again in a moment."); }
   }

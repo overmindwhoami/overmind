@@ -287,7 +287,7 @@ export class ScreenRenderer {
         lines.push([2.1, r.match ? 'MATCH' : 'MISMATCH', r.match ? 'the disk is exactly what was sealed.' : 'the record has changed since it was sealed.']);
         const chain = r.chain.state === 'match' ? `on Solana: the memo in tx ${(r.chain.tx ?? '').slice(0, 4)}…${(r.chain.tx ?? '').slice(-4)} says the same ↗`
           : r.chain.state === 'mismatch' ? 'on Solana: the memo does NOT match.'
-            : r.chain.state === 'pending' ? 'on Solana: not yet. Sealing on chain starts once its wallet has SOL.'
+            : r.chain.state === 'pending' ? 'on Solana: on its way. A seal lands a minute or two after the disk fills.'
               : r.chain.state === 'unreachable' ? 'on Solana: no answer from the network right now.' : 'on Solana: this disk was never sealed on chain.';
         lines.push([2.7, chain]);
       }
