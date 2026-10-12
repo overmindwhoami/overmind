@@ -70,7 +70,8 @@ export async function anchorPending() {
   if (!pending.length) return;
   forgetBalance();
   if ((await walletInfo()).balance === 0) return; // nothing to pay fees with yet: they wait, quietly, until it's funded
-  for (const d of pending) if (d.fingerprint) await anchor(d.n, d.fingerprint);
+  // one at a time, a little apart: a backlog sealed in a burst trips the public RPC's rate limit
+  for (const d of pending) if (d.fingerprint) { await anchor(d.n, d.fingerprint); await new Promise((r) => setTimeout(r, 1200)); }
 }
 
 /** At launch (an empty lineage), disk 0001 exists from the first second: blank, waiting for the first save. */

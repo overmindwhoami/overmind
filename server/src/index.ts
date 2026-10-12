@@ -319,6 +319,9 @@ const statsKey = await migrateStats();
 await migrateBooks();
 scheduleBackups();
 startPosting();
+// A stray rejection from a background chain call (web3.js's confirmation polling can throw a 429 nobody awaits) is
+// logged, not fatal: every chain job here is retried on its own schedule, and the archive must keep writing.
+process.on('unhandledRejection', (e) => console.warn('unhandled rejection (kept running):', String((e as Error)?.message ?? e).slice(0, 200)));
 setInterval(() => { lpJobs().catch((e) => console.warn('launchpad jobs failed', e)); }, 5 * 60_000);
 await ensureDisk();
 const w = await signer();
