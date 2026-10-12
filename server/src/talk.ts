@@ -8,6 +8,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { answer, type Facts } from './answers.js';
 import { currentDisk, diskSaves, qday, recentSaves } from './db.js';
 import { LP_LIVE } from './lp/solana.js';
+import { lutAddress } from './lp/lut.js';
 
 const MODEL = process.env.CHAT_MODEL ?? 'claude-haiku-5-5';
 const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ maxRetries: 1, timeout: 25_000 }) : undefined;
@@ -57,7 +58,7 @@ export async function talk(ip: string, history: { role: 'user' | 'assistant'; co
   const open = Number.isInteger(reading) && reading! >= 0 && reading! < 100_000 ? reading : undefined;
   const saves = await (open !== undefined ? diskSaves(open, 8) : recentSaves(5)).catch(() => []);
   const clock = await qday(process.env.QDAY_START ?? '2032-01-01').catch(() => undefined);
-  const facts: Facts = { disk: disk?.n, written: disk?.written, sealed: disk?.n, qday: clock?.estimate, reason: clock?.reason, saves, reading: open, coinLive: !!process.env.OMD_MINT };
+  const facts: Facts = { disk: disk?.n, written: disk?.written, sealed: disk?.n, qday: clock?.estimate, reason: clock?.reason, saves, reading: open, coinLive: !!process.env.OMD_MINT, lpOpen: LP_LIVE && !!(await lutAddress().catch(() => '')) };
   const written = (status: string) => ({ reply: answer(msgs[msgs.length - 1].content, facts, msgs.length + now / 7919), model: 'written', status });
   if (!client) return written('asleep');
   if (now < restUntil) return written('resting');
@@ -68,7 +69,7 @@ export async function talk(ip: string, history: { role: 'user' | 'assistant'; co
     disk ? `You are writing disk ${String(disk.n + 1).padStart(4, '0')}, ${disk.written} of 90 slots written. ${disk.n} disks sealed so far.` : '',
     clock ? `Your Q-Day guess: ${clock.estimate}${clock.reason ? ` (last moved: ${clock.reason})` : ''}.` : '',
     process.env.OMD_MINT ? '$OMD is live on pump.fun; its numbers are on the board.' : '$OMD has not launched yet; the board says so.',
-    LP_LIVE ? 'The launchpad is open.' : 'The launchpad opens after $OMD launches.',
+    facts.lpOpen ? 'The launchpad is open: anyone can launch a coin at the duplicator.' : LP_LIVE ? 'The launchpad is switched on and opens in a moment (its treasury is getting ready).' : 'The launchpad opens soon.',
     open !== undefined ? `The visitor has disk ${String(open + 1).padStart(4, '0')} in the reader and is asking from inside it. What's on that disk, newest first:\n${saves.map((x) => `- ${x.title ?? '(nothing came through)'}${x.year ? ` (${x.year})` : ''}: ${x.note}`).join('\n') || '- nothing yet'}` :
     saves.length ? `Your latest saves, newest first:\n${saves.map((x) => `- ${x.title ?? '(nothing came through)'}${x.year ? ` (${x.year})` : ''}: ${x.note}`).join('\n')}` : '',
   ].filter(Boolean).join('\n');

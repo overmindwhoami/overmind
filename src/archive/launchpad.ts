@@ -9,7 +9,7 @@ export interface LpCoin {
   links?: { website?: string; twitter?: string }; page?: string;
   snapshotList?: LpSnapshot[];
 }
-export interface LpStatus { open: boolean; treasury: string; split: { treasury: number; launcher: number }; snapshotHours: number; costSol: number }
+export interface LpStatus { open: boolean; switchedOn?: boolean; treasury: string; split: { treasury: number; launcher: number }; snapshotHours: number; costSol: number }
 export interface Sent { ok: boolean; sig?: string; pending?: boolean; expired?: boolean; reason?: string; error?: string }
 
 export class Launchpad {

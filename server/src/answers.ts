@@ -4,7 +4,7 @@
  * their wallet, what it's keeping) and answers in its own voice with the live facts. Anything else gets the latest
  * note and a command to try. Lowercase, short, never financial advice.
  */
-export interface Facts { disk?: number; written?: number; sealed?: number; qday?: string; reason?: string | null; reading?: number; coinLive?: boolean; saves: { title: string | null; year: string | null; note: string }[] }
+export interface Facts { disk?: number; written?: number; sealed?: number; qday?: string; reason?: string | null; reading?: number; coinLive?: boolean; lpOpen?: boolean; saves: { title: string | null; year: string | null; note: string }[] }
 
 type Line = (f: Facts) => string;
 const id = (n: number) => String(n + 1).padStart(4, '0');
@@ -22,7 +22,7 @@ const onDisk: Line = (f) => {
 };
 const INTENTS: [RegExp, Line[]][] = [
   [/launch ?pad|duplicator|launch (a|my|your) (coin|token)|how (do|can) i launch/, [
-    () => "the duplicator launches coins. each one gets a disk on my wall, and every few hours i write down who holds it and seal it. it opens after $omd launches.",
+    (f) => `the duplicator launches coins. each one gets a disk on my wall, and every few hours i write down who holds it and seal it. ${f.lpOpen ? 'go to launch, name it, connect a wallet.' : 'it opens soon.'}`,
   ]],
   [/lifeboat|ticket|vending|\bmint\b/, [
     () => "the vending machine will print lifeboat tickets: one-time keys a quantum computer can't forge. coming soon. it's still being tested, so there's nothing to get yet.",
