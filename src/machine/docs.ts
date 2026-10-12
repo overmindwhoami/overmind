@@ -1,5 +1,5 @@
 /**
- * The docs: the Overmind's operator's manual, printed on the notebook on the desk (manual.ts). Eight pages, four
+ * The docs: the Overmind's operator's manual, printed on the notebook on the desk (manual.ts). Ten pages, five
  * spreads, set big enough to read from the docs camera on a phone: one idea a page. The last page, the receipts, is
  * printed from the live archive (dates, counts, the sealing wallet), so it never goes stale.
  * Everything is drawn in millimetres on a 220 × 290 mm page.
@@ -43,7 +43,7 @@ export function pages(r: Receipts): Block[][] {
       { t: 'gap' },
       { t: 'voice', text: 'the record that survives q-day.' },
       { t: 'gap' },
-      { t: 'rows', rows: [['1', 'what this is'], ['2', 'q-day'], ['3', 'the disks'], ['4', 'proof'], ['5', '$OMD'], ['6', 'the room'], ['7', 'receipts']] },
+      { t: 'rows', rows: [['1', 'what this is'], ['2', 'q-day'], ['3', 'what it reads'], ['4', 'the quantum watch'], ['5', 'the disks'], ['6', 'proof'], ['7', '$OMD'], ['8', 'the room'], ['9', 'receipts']] },
     ],
     [
       { t: 'title', n: '1', text: 'what this is' },
@@ -59,7 +59,29 @@ export function pages(r: Receipts): Block[][] {
       { t: 'list', items: ['On Solana, an address is its public key: every wallet is exposed on Q-Day.', 'Harvest now, decrypt later: data is being collected today to crack tomorrow.', 'Hashes survive: fingerprints hold up against quantum computers.'] },
     ],
     [
-      { t: 'title', n: '3', text: 'the disks' },
+      { t: 'title', n: '3', text: 'what it reads' },
+      { t: 'p', text: 'Every minute the dice choose where it looks, and it keeps one thing. Half the time, the memory of the web; the rest, the road to Q-Day.' },
+      { t: 'rows', rows: [
+        ['memory', 'the Internet Archive, Wikipedia, the Library of Congress, Project Gutenberg'],
+        ['q-day', 'quantum papers on arXiv and IACR ePrint, Hacker News, post-quantum code on GitHub'],
+        ['chains', 'the newest Bitcoin block and the last minute on Solana'],
+        ['the sun', "NOAA's space weather: storms really do flip bits"],
+      ] },
+    ],
+    [
+      { t: 'title', n: '4', text: 'the quantum watch' },
+      { t: 'p', text: 'Between saves it keeps watching for the things that tell it Q-Day is coming:' },
+      { t: 'list', items: [
+        'papers on quantum computers and the encryption they will break',
+        'Bitcoin: every coin spent shows the public key that guarded it',
+        'Solana: every address is its public key, from birth',
+        'the post-quantum locks people are writing to replace today\'s',
+      ] },
+      { t: 'p', text: 'When a paper or a story gives it a reason, it moves the red clock a few days and says why.' },
+      { t: 'voice', text: 'i read the warnings so the record has them.' },
+    ],
+    [
+      { t: 'title', n: '5', text: 'the disks' },
       { t: 'fact', big: '1.44 MB', text: 'a floppy: exactly 1,440 KB' },
       { t: 'fact', big: '1,440', text: 'minutes in a day' },
       { t: 'fact', big: '90 × 16 KB', text: 'slots on a disk: a link, an excerpt, a note' },
@@ -67,7 +89,7 @@ export function pages(r: Receipts): Block[][] {
       { t: 'p', text: "Each disk is also a copy of the Overmind as it was that hour. It can't copy itself exactly, so every disk wakes up liking something slightly different." },
     ],
     [
-      { t: 'title', n: '4', text: 'proof' },
+      { t: 'title', n: '6', text: 'proof' },
       { t: 'p', text: 'Every sealed disk has a fingerprint: a SHA-256 hash of its 90 records. The fingerprint goes on Solana in a memo from the sealing wallet.' },
       { t: 'p', text: 'To check a disk, put it in the computer and type CHECK. Your browser downloads the record, hashes it itself and compares.' },
       { t: 'p', text: "MATCH means nobody changed it: not us, not the Overmind. You don't have to trust our server." },
@@ -75,21 +97,21 @@ export function pages(r: Receipts): Block[][] {
       { t: 'voice', text: 'check me. i want you to.' },
     ],
     [
-      { t: 'title', n: '5', text: '$OMD' },
+      { t: 'title', n: '7', text: '$OMD' },
       { t: 'p', text: "$OMD is the Overmind's coin, launched on pump.fun." },
       { t: 'p', text: "Creator fees pay for the Overmind's running costs and its seals on Solana. The sealing wallet is public, so anyone can see what goes in and what goes out." },
       { t: 'p', text: 'The board on the wall shows the coin\'s numbers once it is live, and only numbers that add up.' },
       { t: 'p', text: 'Nothing here is financial advice.' },
     ],
     [
-      { t: 'title', n: '6', text: 'the room' },
-      { t: 'rows', rows: [['docs', 'this manual'], ['$OMD', 'the board: the coin, live'], ['terminal', 'talk to the Overmind'], ['launch', 'the duplicator: launch a token (soon)'], ['explorer', 'the wall: one disk for every token'], ['mint', 'the vending machine (coming soon)'], ['overmind', 'the tower: every disk, newest on top']] },
+      { t: 'title', n: '8', text: 'the room' },
+      { t: 'rows', rows: [['docs', 'this manual'], ['$OMD', 'the board: the coin, live'], ['terminal', 'talk to the Overmind'], ['launch', 'the duplicator: launch a coin; it gets a disk on the wall'], ['explorer', 'the wall: every coin, its holders sealed'], ['mint', 'the vending machine: lifeboat tickets (test network)'], ['overmind', 'the tower: every disk, newest on top']] },
       { t: 'gap' },
       { t: 'p', text: 'Click a disk on the tower to read it; Share sends a link straight to it. Esc goes back.' },
       { t: 'p', text: 'The line under the name says who else is here and what they just did. Tap it to follow.' },
     ],
     [
-      { t: 'title', n: '7', text: 'receipts' },
+      { t: 'title', n: '9', text: 'receipts' },
       { t: 'p', text: 'Public facts, each one checkable.' },
       { t: 'rows', rows: [
         ['genesis', `${date(r.genesis)}: disk 0001 began`],
@@ -105,7 +127,9 @@ export function pages(r: Receipts): Block[][] {
     ],
   ];
 }
-export const PAGE_COUNT = 8;
+export const PAGE_COUNT = 10;
+/** The spread the receipts are on (printed from the live archive). */
+export const RECEIPTS_SPREAD = 4;
 
 /** Draws one page's blocks (millimetres, origin top-left of the page). */
 export function drawPage(g: CanvasRenderingContext2D, blocks: Block[], n: number, large = false) {

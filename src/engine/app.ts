@@ -20,7 +20,7 @@ import { PREVIEW, PREVIEW_API, simulated } from '../preview';
 import { WriteLog } from '../ui/writeLog';
 import { Story, type Line } from '../ui/story';
 import { Walkthrough, type Rect, type TourStop } from '../ui/walkthrough';
-import { PAGE_COUNT, drawPage, pages, type Receipts } from '../machine/docs';
+import { PAGE_COUNT, RECEIPTS_SPREAD, drawPage, pages, type Receipts } from '../machine/docs';
 import { Terminal } from '../ui/terminal';
 import { Launchpad, type LpCoin } from '../archive/launchpad';
 import { CoinSheet, LaunchSheet } from '../ui/launchpad';
@@ -46,6 +46,7 @@ const TOUR: (TourStop & { where: 'tower' | 'stack' | 'room'; target: TourTarget;
   { title: 'the live disk', line: 'this is me, writing. every minute i decide what makes it through.', where: 'tower', target: 'live' },
   { title: 'its label', line: "where it came from: the disk it forked from, and its fingerprint.", where: 'tower', target: 'label' },
   { title: 'the write log', line: 'every save lands here with my note on why i kept it. ninety, and the disk is full.', where: 'tower', target: 'log' },
+  { title: 'what i read', line: 'the internet archive, old newspapers, quantum papers, the news, bitcoin and solana. about half of it is warnings about q-day.', where: 'tower', target: 'log' },
   { title: 'the lineage', line: 'every disk under it is full and sealed. anyone can check nobody changed them. not even me.', where: 'room', target: 'stack' },
   { title: 'q-day', line: "the red clock is my guess at q-day: the day quantum computers break today's encryption.", where: 'room', target: 'clock', wake: 'clock' },
   { title: 'the reader', line: "put any disk in that machine and i'll read it to you. ask me to check one, and i'll prove it.", where: 'room', target: 'reader', wake: 'computer' },
@@ -54,7 +55,7 @@ const FACE_MM = spec.disk.t / 2;
 const TOUCH = window.matchMedia('(hover: none)').matches;
 const WORDS = {
   thesis: 'The Overmind is writing the record that survives Q-Day.',
-  minute: 'Every minute, it decides what makes it through.',
+  minute: 'Every minute it reads the web’s memory and the warnings of Q-Day, and decides what makes it through.',
   qday: "Q-Day: the day quantum computers break today's encryption. The red clock is its guess.",
   tower: TOUCH ? 'Tap a disk to look inside, or' : 'Hover a disk to look inside, or',
   room: TOUCH ? 'Tap a name to go there, or' : 'Click anything in the room, or',
@@ -784,9 +785,9 @@ export class App {
       genesis: first.startedAt || undefined, firstSeal: first.sealed ? first.sealedAt : undefined, sealed: this.archive.sealedCount(),
       qday: this.archive.watch?.()?.qday?.estimate?.slice(0, 10), coin: this.coin?.mint ?? ((import.meta.env.VITE_OMD_MINT as string | undefined) || undefined),
     };
-    if (spread === 3 && this.archive.wallet) r.wallet = await this.archive.wallet();
+    if (spread === RECEIPTS_SPREAD && this.archive.wallet) r.wallet = await this.archive.wallet();
     const large = this.camera.aspect < 1, key = spread * 2 + (large ? 1 : 0);
-    if (key === this.docsSpread && spread !== 3) return;
+    if (key === this.docsSpread && spread !== RECEIPTS_SPREAD) return;
     this.docsSpread = key;
     const all = pages(r);
     this.room.manual.print((g, side) => drawPage(g, all[spread * 2 + side], spread * 2 + side, large));
