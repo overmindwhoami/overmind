@@ -14,7 +14,8 @@
     "lp:lut": "tsx scripts/lp-lut.ts",
     "lp:rehearse": "tsx scripts/lp-rehearse.ts",
     "lp": "tsx scripts/lp.ts",
-    "preflight": "tsx scripts/preflight.ts"
+    "preflight": "tsx scripts/preflight.ts",
+    "lenses": "tsx scripts/lenses.ts"
   },
   "engines": {
     "node": ">=22"

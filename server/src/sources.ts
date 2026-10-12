@@ -111,15 +111,19 @@ async function wayback(r: Rand): Promise<Item[]> {
 // ——— beyond archive.org ———
 type WikiPage = { titles?: { normalized?: string }; extract?: string; content_urls?: { desktop?: { page?: string } };
   thumbnail?: { source?: string; width?: number }; originalimage?: { source?: string; width?: number } };
-async function wikipedia(_r: Rand, now: Date): Promise<Item[]> {
+async function wikipedia(r: Rand, now: Date): Promise<Item[]> {
   const [m, d] = mmdd(now).split('-');
-  const w = await json<{ selected?: { year: number; text: string; pages: WikiPage[] }[] }>(`https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/selected/${m}/${d}`);
-  return (w.selected ?? []).flatMap((e) => {
+  // the whole day, not just the ~20 selected events: what happened, who was born, who died (hundreds a date)
+  type Day = { year: number; text: string; pages: WikiPage[] }[];
+  const w = await json<{ selected?: Day; events?: Day; births?: Day; deaths?: Day }>(`https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/all/${m}/${d}`);
+  const kind = pick(r, ['selected', 'events', 'events', 'births', 'deaths'] as const);
+  const list = [...(w[kind] ?? []), ...(w.selected ?? []), ...(w.events ?? [])];
+  return list.flatMap((e) => {
     const p = e.pages?.[0], url = p?.content_urls?.desktop?.page, title = p?.titles?.normalized;
     if (!p || !url || !title) return [];
     // a picture the instrument can use: the original if it's a sensible size, else a 960 px rendition
     const big = p.originalimage?.source && (p.originalimage.width ?? 9999) <= 2400 ? p.originalimage.source : p.thumbnail?.source?.replace(/\/\d+px-/, '/960px-');
-    return [{ id: `wikipedia:${e.year}:${title}`, source: 'wikipedia' as Source, kind: 'event', title: clean(title).slice(0, 140), year: e.year, creator: 'Wikipedia',
+    return [{ id: `wikipedia:${e.year}:${title}`, source: 'wikipedia' as Source, kind: kind === 'births' ? 'born' : kind === 'deaths' ? 'died' : 'event', title: clean(title).slice(0, 140), year: e.year, creator: 'Wikipedia',
       excerpt: excerpt(`${e.year}: ${e.text} ${p.extract ?? ''}`), url, image: big?.split('?')[0] }];
   });
 }
@@ -147,7 +151,20 @@ async function loc(r: Rand, now: Date): Promise<Item[]> {
   return [];
 }
 
-async function gutenberg(): Promise<Item[]> {
+async function gutenberg(r: Rand): Promise<Item[]> {
+  const today = await gutenbergToday().catch(() => [] as Item[]);
+  // behind today's releases, the catalogue: a page the dice choose of Gutenberg's most-read books
+  type Book = { id: number; title: string; authors?: { name: string; birth_year?: number | null; death_year?: number | null }[]; subjects?: string[]; formats?: Record<string, string> };
+  const page = await json<{ results?: Book[] }>(`https://gutendex.com/books/?page=${1 + Math.floor(r() * 300)}`, 20_000).catch(() => ({ results: [] as Book[] }));
+  const shelf = (page.results ?? []).map((b): Item => {
+    const a = b.authors?.[0], name = a?.name?.split(', ').reverse().join(' ') ?? null;
+    return { id: `gutenberg:${b.id}`, source: 'gutenberg', kind: 'book', title: clean(b.title).slice(0, 140), year: null, creator: name,
+      excerpt: excerpt(`On Project Gutenberg, free for anyone, forever.${a?.birth_year ? ` ${name} lived ${a.birth_year}–${a.death_year ?? '?'}.` : ''} ${(b.subjects ?? []).slice(0, 3).join('; ')}.`),
+      url: `https://www.gutenberg.org/ebooks/${b.id}`, image: `https://www.gutenberg.org/cache/epub/${b.id}/pg${b.id}.cover.medium.jpg` };
+  });
+  return [...today, ...shelf];
+}
+async function gutenbergToday(): Promise<Item[]> {
   return feed(await text('https://www.gutenberg.org/cache/epub/feeds/today.rss')).flatMap((e) => {
     const link = clean(e.get('link')), id = link.match(/ebooks\/(\d+)/)?.[1];
     if (!id) return [];
@@ -166,7 +183,11 @@ async function arxiv(r: Rand): Promise<Item[]> {
     'abs:"quantum error correction" AND abs:"threshold"', 'abs:"hash-based signature"', 'abs:"lattice" AND abs:"cryptography" AND abs:quantum',
     'abs:"RSA-2048" AND abs:quantum', 'abs:"bitcoin" AND abs:quantum', 'abs:"harvest now"',
   ];
-  const xml = await text(`https://export.arxiv.org/api/query?search_query=${encodeURIComponent(pick(r, queries))}&max_results=25&sortBy=submittedDate&sortOrder=descending`, 20_000);
+  const q = encodeURIComponent(pick(r, queries));
+  const page = (start: number) => text(`https://export.arxiv.org/api/query?search_query=${q}&start=${start}&max_results=25&sortBy=submittedDate&sortOrder=descending`, 20_000);
+  // a page the dice choose (up to ~200 back); a narrow search has fewer, so an empty page falls back to the newest
+  let xml = await page(Math.floor(r() * 8) * 25);
+  if (!xml.includes('<entry>')) xml = await page(0);
   return feed(xml, 'entry').map((e) => {
     const id = e.get('id').trim().replace(/^https?:\/\/arxiv\.org\/abs\//, '').replace(/v\d+$/, '');
     return { id: `arxiv:${id}`, source: 'arxiv' as Source, kind: 'paper', title: clean(e.get('title')).slice(0, 160), year: Number(e.get('published').slice(0, 4)) || null,
@@ -188,10 +209,16 @@ async function eprint(): Promise<Item[]> {
 
 const Q_NEWS = /quantum|qubit|q-day|shor|post-quantum|pqc|cryptograph|encryption|ml-kem|lattice|harvest now|project eleven/i;
 async function news(r: Rand): Promise<Item[]> {
+  // a deep page on a narrow topic can be empty, or filter down to nothing: then the first page, then another topic
+  for (let tries = 0; tries < 3; tries++) { const found = await newsOnce(r, tries === 1); if (found.length) return found; }
+  return [];
+}
+async function newsOnce(r: Rand, first = false): Promise<Item[]> {
   const q = pick(r, ['quantum computing', 'post-quantum', 'qubits', 'quantum cryptography', 'Q-Day', 'quantum bitcoin', 'Shor algorithm', 'quantum error correction', 'Project Eleven quantum']);
-  const since = Math.floor(Date.now() / 1000) - 180 * 86400;
+  const recent = r() < 0.5, since = Math.floor(Date.now() / 1000) - 180 * 86400;
+  const filters = recent ? `created_at_i>${since},points>5` : 'points>20';
   const d = await json<{ hits: { objectID: string; title?: string; url?: string; author?: string; points?: number; num_comments?: number; created_at?: string; story_text?: string }[] }>(
-    `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(q)}&tags=story&numericFilters=created_at_i>${since},points>5&hitsPerPage=30`);
+    `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(q)}&tags=story&numericFilters=${filters}&hitsPerPage=30&page=${first ? 0 : Math.floor(r() * (recent ? 2 : 3))}`);
   // keep it to the q-day beat (the search is generous with near matches)
   return d.hits.filter((h) => h.title && Q_NEWS.test(h.title)).map((h) => {
     const host = h.url ? new URL(h.url).hostname.replace(/^www\./, '') : 'news.ycombinator.com';
@@ -227,7 +254,7 @@ const GITHUB_TOPICS = ['post-quantum', 'ml-kem', 'ml-dsa', 'slh-dsa', 'sphincs',
 async function github(r: Rand): Promise<Item[]> {
   const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
   const d = await json<{ items?: { full_name: string; html_url: string; description?: string; stargazers_count: number; created_at: string; pushed_at: string; owner: { login: string } }[] }>(
-    `https://api.github.com/search/repositories?q=${encodeURIComponent(`${pick(r, GITHUB_TOPICS)} pushed:>${since}`)}&sort=stars&order=desc&per_page=25`);
+    `https://api.github.com/search/repositories?q=${encodeURIComponent(`${pick(r, GITHUB_TOPICS)} pushed:>${since}`)}&sort=stars&order=desc&per_page=25&page=${1 + Math.floor(r() * 3)}`);
   return (d.items ?? []).filter((x) => x.description).map((x) => ({
     id: `github:${x.full_name}`, source: 'github' as Source, kind: 'code', title: x.full_name, year: Number(x.created_at.slice(0, 4)), creator: x.owner.login,
     excerpt: excerpt(`${x.description} · ${fmt(x.stargazers_count)} stars · last pushed ${x.pushed_at.slice(0, 10)}.`), url: x.html_url,
@@ -266,24 +293,24 @@ async function noaa(): Promise<Item[]> {
 }
 
 /**
- * The lenses and how often the dice choose each: w normally (archive.org about 40%, the Q-Day watch about a third),
+ * The lenses and how often the dice choose each: w normally (archive.org about a quarter, the Q-Day watch about a third),
  * early for the first few disks (the lore: Q-Day watch and GitHub about half, floppy and crypto history a seventh).
  */
 const LENSES: { name: string; w: number; early: number; qday?: boolean; run: (r: Rand, now: Date) => Promise<Item[]> }[] = [
-  { name: 'archive', w: 0.28, early: 0.14, run: archive },
-  { name: 'onthisday', w: 0.06, early: 0.04, run: onThisDay },
+  { name: 'archive', w: 0.18, early: 0.14, run: archive },
+  { name: 'onthisday', w: 0.04, early: 0.04, run: onThisDay },
   { name: 'wayback', w: 0.03, early: 0.03, run: wayback }, // rate-limited often; when it is, the dice choose again
-  { name: 'wikipedia', w: 0.08, early: 0.08, run: wikipedia },
-  { name: 'loc', w: 0.06, early: 0.04, run: loc },
-  { name: 'gutenberg', w: 0.03, early: 0.02, run: gutenberg },
+  { name: 'wikipedia', w: 0.12, early: 0.08, run: wikipedia },
+  { name: 'loc', w: 0.08, early: 0.04, run: loc },
+  { name: 'gutenberg', w: 0.06, early: 0.02, run: gutenberg },
   { name: 'lore', w: 0, early: 0.14, run: lore },
   { name: 'arxiv', w: 0.13, early: 0.14, qday: true, run: arxiv },
-  { name: 'eprint', w: 0.07, early: 0.08, qday: true, run: eprint },
-  { name: 'news', w: 0.09, early: 0.10, qday: true, run: news },
-  { name: 'bitcoin', w: 0.05, early: 0.05, qday: true, run: bitcoin },
+  { name: 'eprint', w: 0.05, early: 0.08, qday: true, run: eprint },
+  { name: 'news', w: 0.11, early: 0.10, qday: true, run: news },
+  { name: 'bitcoin', w: 0.04, early: 0.05, qday: true, run: bitcoin },
   { name: 'solana', w: 0.03, early: 0.03, qday: true, run: solana },
-  { name: 'github', w: 0.04, early: 0.08, qday: true, run: github },
-  { name: 'noaa', w: 0.05, early: 0.03, run: noaa },
+  { name: 'github', w: 0.05, early: 0.08, qday: true, run: github },
+  { name: 'noaa', w: 0.03, early: 0.03, run: noaa },
 ];
 /** Lenses whose finds can move the Q-Day clock. */
 export const QDAY_LENSES = new Set(LENSES.filter((l) => l.qday).map((l) => l.name));
@@ -301,11 +328,17 @@ function choose(r: Rand, skip: Set<string>, early: boolean) {
   return open[open.length - 1];
 }
 
-/** Up to `n` unseen candidates from the lens the dice choose; if it fails or has nothing new, the dice choose again (twice). */
+const ARCHIVE_FAMILY = new Set(['archive', 'onthisday', 'wayback', 'lore']);
+/**
+ * Up to `n` unseen candidates from the lens the dice choose. If it fails or has nothing new, the dice choose again among
+ * the sources beyond the Archive (it would otherwise win every re-roll, being the deepest), and the Archive is the
+ * last resort, so a gap means everything really came up empty.
+ */
 export async function candidates(r: Rand, now: Date, n = 7, only?: string, early = false): Promise<{ lens: string; items: Item[] }> {
   const tried = new Set<string>();
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const l = only ? LENSES.find((x) => x.name === only)! : choose(r, tried, early);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const skip = attempt === 0 ? tried : attempt < 4 ? new Set([...tried, ...ARCHIVE_FAMILY]) : tried;
+    const l = only ? LENSES.find((x) => x.name === only)! : attempt === 4 && !tried.has('archive') ? LENSES.find((x) => x.name === 'archive')! : choose(r, skip, early);
     tried.add(l.name);
     try {
       const found = await l.run(r, now);
@@ -319,3 +352,9 @@ export async function candidates(r: Rand, now: Date, n = 7, only?: string, early
   return { lens: [...tried].join('/'), items: [] };
 }
 export const LENS_NAMES = LENSES.map((l) => l.name);
+/** Runs one lens as it is (no seen-filter): how much a source gives right now (npm run lenses). */
+export async function probe(name: string, r: Rand, now = new Date()): Promise<Item[]> {
+  const l = LENSES.find((x) => x.name === name);
+  if (!l) throw new Error(`no lens ${name}`);
+  return (await l.run(r, now)).filter(keep);
+}

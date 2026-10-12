@@ -82,8 +82,9 @@ const checked = new Map<string, number>();
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
-  // the last X-Forwarded-For entry is the one Railway's edge added; anything before it is the client's to write
-  const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',').map((s) => s.trim()).filter(Boolean).pop() ?? '';
+  // Railway's edge sets X-Real-IP to the connecting client (checked in production: X-Forwarded-For ends with the edge's own
+  // address, so its last entry would make everyone one visitor)
+  const ip = String(req.headers['x-real-ip'] ?? String(req.headers['x-forwarded-for'] ?? '').split(',')[0] ?? req.socket.remoteAddress ?? '').trim();
   try {
     if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '86400' }); return res.end(); }
     // the launchpad: its own routes (reads open; launching only while LP_LIVE is on)
@@ -150,7 +151,6 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/api/nominations') return send(res, 200, await mine(visitorOf(url.searchParams.get('v'), ip)));
     if (path === '/health') {
-      if (url.searchParams.has('trace')) console.log('ip trace', JSON.stringify({ xff: req.headers['x-forwarded-for'], real: req.headers['x-real-ip'], socket: req.socket.remoteAddress, chosen: ip })); // temporary: checking the proxy's headers
       const d = await currentDisk();
       return send(res, 200, { ok: true, disk: d?.n ?? null, written: d?.written ?? 0, model: process.env.ANTHROPIC_API_KEY ? MODEL : 'template (no ANTHROPIC_API_KEY)', storage, wallet: await walletInfo() });
     }
