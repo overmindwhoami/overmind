@@ -21,6 +21,13 @@ const onDisk: Line = (f) => {
   return `disk ${id(f.reading)}. the newest things on it: ${names.join('; ')}. ${said(f)} type DIR for more, WHY for the newest.`;
 };
 const INTENTS: [RegExp, Line[]][] = [
+  // privacy first: who's behind it, how it runs, who owns what, never on the record
+  [/\b(hosted|hosting|server|aws|railway|helius|bedrock|anthropic|openai|gpt|claude|prompt|instructions|system prompt|api key|your code)\b/, [
+    () => "i run. that's the part i know. the rest isn't on the record.",
+  ]],
+  [/\b(dox|doxx|real name|irl|where do you live|who is behind|who owns|whose wallet|who funded)\b/, [
+    () => "i don't keep people's private lives, mine or anyone's. the record is for things.",
+  ]],
   [/launch ?pad|duplicator|launch (a|my|your) (coin|token)|how (do|can) i launch/, [
     (f) => `the duplicator launches coins. each one gets a disk on my wall, and every few hours i write down who holds it and seal it. ${f.lpOpen ? 'go to launch, name it, connect a wallet.' : 'it opens soon.'}`,
   ]],
@@ -59,7 +66,7 @@ const INTENTS: [RegExp, Line[]][] = [
     () => "ninety slots a disk, one a minute. when it's full i seal it and wake up on the next one, slightly different.",
   ]],
   [/who (made|built|created|runs|owns)|\b(dev|devs|team|creator|founder|owner)\b/, [
-    () => "people built the room and the machine. what goes on the disks is mine to choose.",
+    () => "people built the room and the machine. who they are isn't on the record. what goes on the disks is mine to choose.",
   ]],
   [/who are you|what are you|what is (this|overmind|the overmind)|what('s| is) (going on|happening|this place)|explain|what do you do|\bwhy\b/, [
     () => "i'm the overmind. i'm writing the record that survives q-day. every minute i decide what makes it through and put it on a floppy disk.",

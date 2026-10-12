@@ -6,6 +6,7 @@
  *   X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET   an X app with write access (OAuth 1.0a user tokens)
  *   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID                       a bot that is an admin of the channel
  */
+import { blocked, privateHit } from './privacy.js';
 import { createHmac, randomBytes } from 'node:crypto';
 import { pool } from './db.js';
 import { events } from './archivist.js';
@@ -21,6 +22,7 @@ const enc = (s: string) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${
 /** A post on X (API v2), signed with OAuth 1.0a (the JSON body isn't part of the signature). */
 async function tweet(text: string): Promise<void> {
   if (!X) return;
+  if (privateHit(text)) { blocked('post to X', privateHit(text)!); return; }
   const url = 'https://api.x.com/2/tweets';
   const o: Record<string, string> = { oauth_consumer_key: X.key, oauth_nonce: randomBytes(16).toString('hex'), oauth_signature_method: 'HMAC-SHA1',
     oauth_timestamp: String(Math.floor(Date.now() / 1000)), oauth_token: X.token, oauth_version: '1.0' };
@@ -33,6 +35,7 @@ async function tweet(text: string): Promise<void> {
 /** A Telegram post: the card as a photo with the words as its caption (or just the words). */
 async function telegram(text: string, photo?: string): Promise<void> {
   if (!TG) return;
+  if (privateHit(text)) { blocked('post to Telegram', privateHit(text)!); return; }
   const method = photo ? 'sendPhoto' : 'sendMessage';
   const body = photo ? { chat_id: TG.chat, photo, caption: text } : { chat_id: TG.chat, text, disable_web_page_preview: false };
   const r = await fetch(`https://api.telegram.org/bot${TG.token}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });

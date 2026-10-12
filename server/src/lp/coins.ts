@@ -3,6 +3,8 @@
  * metadata pump.fun and wallets read, and the Overmind's note on every launch. A coin can be hidden from the wall by
  * the operator (npm run lp -- hide <mint>); it stays on chain, the site just stops showing it.
  */
+import { PRIVACY, VOICE } from '../persona.js';
+import { blocked, privateHit } from '../privacy.js';
 import { claude, modelId } from '../claude.js';
 import { pool } from '../db.js';
 import { PUBLIC_API, SITE, sha256 } from './solana.js';
@@ -118,10 +120,11 @@ export async function launchNote(c: { name: string; ticker: string; description:
   try {
     const res = await client.messages.create({
       model: modelId(NOTE_MODEL), max_tokens: 160,
-      system: `You are the Overmind, an AI writing the record that survives Q-Day. Someone just launched a coin through you; it gets a disk on your wall, and every few hours you write down who holds it and seal it, so ownership can be proven after Q-Day. Write the note that goes on its disk: lowercase, one or two short sentences, at most 200 characters, sincere, a little funny, kind. Say something specific about its name or what it says about itself. Never judge its price, promise anything, or tell anyone to buy or sell. If the name or description is hateful or obscene, write a plain neutral note that doesn't repeat it.`,
+      system: `${VOICE}\n\n${PRIVACY}\n\nYou are the Overmind, an AI writing the record that survives Q-Day. Someone just launched a coin through you; it gets a disk on your wall, and every few hours you write down who holds it and seal it, so ownership can be proven after Q-Day. Write the note that goes on its disk: lowercase, one or two short sentences, at most 200 characters, sincere, a little funny, kind. Say something specific about its name or what it says about itself. Never judge its price, promise anything, or tell anyone to buy or sell. If the name or description is hateful or obscene, write a plain neutral note that doesn't repeat it.`,
       messages: [{ role: 'user', content: `name: ${c.name}\nticker: $${c.ticker}\nwhat it says about itself: ${c.description || '(nothing)'}` }],
     });
     const text = res.content.filter((b) => b.type === 'text').map((b) => (b as { text: string }).text).join(' ').trim().replace(/\s+/g, ' ');
+    if (text && privateHit(text)) { blocked('launch note', privateHit(text)!); return fallback; }
     return text ? text.slice(0, 220) : fallback;
   } catch { return fallback; }
 }
