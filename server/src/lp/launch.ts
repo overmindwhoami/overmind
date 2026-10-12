@@ -16,7 +16,7 @@ import bs58 from 'bs58';
 import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { ComputeBudgetProgram, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type AddressLookupTableAccount, type TransactionInstruction } from '@solana/web3.js';
 import { pool } from '../db.js';
-import { connection, JITO, jitoTipIx, LP_LAUNCHER_BPS, LP_LUT, LP_TREASURY_BPS, PUBLIC_API, pump, sendBundle, broadcast, txOutcome, sha256, signedBy, SOL_MINT, TOKEN, TOKEN_2022, treasury } from './solana.js';
+import { connection, JITO, jitoTipIx, LP_LAUNCHER_BPS, LP_TREASURY_BPS, PUBLIC_API, pump, sendBundle, broadcast, txOutcome, sha256, signedBy, SOL_MINT, TOKEN, TOKEN_2022, treasury } from './solana.js';
 
 export class LaunchError extends Error {}
 
@@ -52,8 +52,10 @@ export function validate(i: Partial<LaunchInput>): LaunchInput {
 }
 
 async function lookupTable(): Promise<AddressLookupTableAccount> {
-  const lut = LP_LUT() ? (await connection.getAddressLookupTable(new PublicKey(LP_LUT())).catch(() => null))?.value : null;
-  if (!lut) { console.error('[lp] LP_LUT is missing or not on chain: launches are refused (npm run lp:lut)'); throw new LaunchError('Launching is paused for a moment. Try again shortly.'); }
+  const { lutAddress } = await import('./lut.js');
+  const at = await lutAddress();
+  const lut = at ? (await connection.getAddressLookupTable(new PublicKey(at)).catch(() => null))?.value : null;
+  if (!lut) { console.error('[lp] no launch lookup table yet (the treasury makes one once it has 0.02 SOL): launches are refused'); throw new LaunchError('Launching is paused for a moment. Try again shortly.'); }
   return lut;
 }
 
@@ -204,7 +206,7 @@ export async function buildBuy(wallet: string, mint: string, sol: number): Promi
   const amount = p.getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: state.bondingCurve.tokenTotalSupply, bondingCurve: state.bondingCurve, amount: solAmount, quoteMint: new PublicKey(SOL_MINT) });
   const ixs = await p.PUMP_SDK.buyInstructions({ global, bondingCurveAccountInfo: state.bondingCurveAccountInfo, bondingCurve: state.bondingCurve,
     associatedUserAccountInfo: state.associatedUserAccountInfo, mint: mintPk, user: buyer, amount, solAmount, slippage: 5, tokenProgram: TOKEN_2022 });
-  const lut = LP_LUT() ? (await connection.getAddressLookupTable(new PublicKey(LP_LUT())).catch(() => null))?.value ?? undefined : undefined;
+  const lut = await lookupTable().catch(() => undefined);
   const { blockhash } = await connection.getLatestBlockhash('confirmed');
   const msg = new TransactionMessage({ payerKey: buyer, recentBlockhash: blockhash, instructions: [
     ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 150_000 }),

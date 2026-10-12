@@ -8,6 +8,7 @@
  *   /api/lp/…                   the launchpad (src/lp/routes.ts): launch a coin, its disk on the wall, holder snapshots
  *   POST /api/nominate          {url, v}: a visitor's SAVE at the terminal (curated sources only); GET /api/nominations?v= their own
  *   POST /api/activity          {kind: open|share, disk, v} or {kind: docs, v}: what a visitor did, told to the room (no free text)
+ *   GET /api/disks/:n/image     a sealed disk as a real 1.44 MB FAT12 floppy image (mounts in DOSBox or an emulator)
  *   GET /api/coin               $OMD's numbers for the board (DexScreener, cached a minute; none until OMD_MINT is set)
  *   GET /media/:key             the instrument's stills and loops (CORS, immutable)
  * ROUND_EVERY_MS overrides the minute (local testing only).
@@ -18,6 +19,7 @@ import { anchorPending, ensureDisk, events, round, SLOTS } from './archivist.js'
 import { balanceOf, explorer, signer, walletInfo } from './chain.js';
 import { coin } from './coin.js';
 import { recordText } from './seal.js';
+import { floppyImage } from './floppy-image.js';
 import { refreshWatch, watch, watchEvents } from './watch.js';
 import { get as getMedia, mediaOptions, storage } from './media.js';
 import { MODEL } from './mind.js';
@@ -128,6 +130,16 @@ const server = createServer(async (req, res) => {
       const from = Math.max(0, Number(url.searchParams.get('from') ?? 0) | 0);
       const to = Math.min(from + 199, Number(url.searchParams.get('to') ?? from + 199) | 0);
       return send(res, 200, (await disks(from, to)).map(diskJson));
+    }
+    const imgPath = path.match(/^\/api\/disks\/(\d+)\/image$/);
+    if (imgPath) {
+      const n = Number(imgPath[1]);
+      const [d] = await disks(n, n);
+      if (!d?.sealed_at) return send(res, 404, { error: 'not sealed yet' });
+      const body = floppyImage(d, await slots(n));
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-disposition': `attachment; filename="overmind-disk-${String(n + 1).padStart(4, '0')}.img"`,
+        'content-length': String(body.length), 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=86400' });
+      return res.end(body);
     }
     const rec = path.match(/^\/api\/disks\/(\d+)\/record$/);
     if (rec) {

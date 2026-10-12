@@ -23,8 +23,6 @@ export const LP_LIVE = process.env.LP_LIVE === 'true';
 /** The creator fee's split: the Overmind's treasury (snapshots, seals, the archive) and the launcher. */
 export const LP_TREASURY_BPS = Number(process.env.LP_TREASURY_BPS ?? 5000);
 export const LP_LAUNCHER_BPS = 10_000 - LP_TREASURY_BPS;
-/** The address lookup table holding pump's fixed accounts (scripts/lp-lut.ts): a launch doesn't fit a transaction without it. */
-export const LP_LUT = () => process.env.LP_LUT ?? '';
 /** Where this server is reached (token metadata and images are served from here). */
 export const PUBLIC_API = process.env.PUBLIC_API_URL ?? 'https://archivist-production-ef62.up.railway.app';
 export const SITE = process.env.PUBLIC_SITE_URL ?? 'https://overmind.im';

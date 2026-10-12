@@ -219,6 +219,7 @@ export class App {
     link: document.querySelector<HTMLAnchorElement>('[data-reader-link]'),
     eject: document.querySelector<HTMLButtonElement>('[data-eject]'),
     share: document.querySelector<HTMLButtonElement>('[data-share]'),
+    image: document.querySelector<HTMLAnchorElement>('[data-image]'),
     announce: document.querySelector<HTMLElement>('[data-announce]'),
   };
 
@@ -682,6 +683,7 @@ export class App {
   private launchSheet!: LaunchSheet;
   private coinSheet!: CoinSheet;
   private coins: LpCoin[] = [];
+  private sheetRaise = 0;
   private async refreshCoins() {
     if (!this.lp || !this.room) return;
     try { this.coins = await this.lp.coins(); } catch { return; }
@@ -765,6 +767,13 @@ export class App {
     if (this.place === 'tower') { pos = this.camera.position.clone(); look = this.lookAt.clone(); up = this.camera.up.clone(); focus = DRIFT.focusBase + settings.focus; }
     else if (this.place === 'terminal') { const r = this.station.readerCamera(this.camera, window.innerWidth <= 640 && this.camera.aspect < 0.8 ? 0.5 : 0); pos = r.pos; look = r.look; focus = r.distance; }
     else { const v = this.room.view(this.place, this.camera, this.place === 'room' ? this.roomYaw : 0); pos = v.pos; look = v.look; focus = v.distance; if ('up' in v && v.up) up = v.up; }
+    // a phone with a launchpad sheet open: the object rises into the top of the frame, clear of the sheet
+    const sheet = this.camera.aspect < 0.8 ? (this.place === 'launch' && !this.launchSheet.root.hidden ? 0.55 : this.place === 'explorer' && !this.coinSheet.root.hidden ? 0.5 : 0) : 0;
+    this.sheetRaise += (sheet - this.sheetRaise) * (1 - Math.exp(-dt * 6));
+    if (this.sheetRaise > 0.001 && this.place !== 'tower') {
+      const shift = up.clone().multiplyScalar(-this.sheetRaise * focus * Math.tan((this.camera.fov * Math.PI) / 360));
+      pos.add(shift); look.add(shift);
+    }
     if (this.place === 'room') pos.add(new THREE.Vector3(this.pointer.x * 0.9, this.pointer.y * 0.45, 0)); // a little parallax over the room
     const from = this.flightFrom, lift = from.pos.distanceTo(pos) * 0.12;
     this.camera.position.copy(from.pos).lerp(pos, e);
@@ -890,6 +899,13 @@ export class App {
     }
     if (this.dom.eject) this.dom.eject.hidden = !this.station.open;
     if (this.dom.share) this.dom.share.hidden = !this.station.open;
+    // a sealed disk can be taken home: a real 1.44 MB floppy image (the live archive serves it)
+    const endpoint = (this.archive as { endpoint?: string }).endpoint, n = this.station.disk;
+    const imageUrl = this.station.open && endpoint && n !== undefined && this.archive.disk(n).sealed ? `${endpoint}/api/disks/${n}/image` : '';
+    if (this.dom.image && this.dom.image.getAttribute('href') !== (imageUrl || null)) {
+      this.dom.image.hidden = !imageUrl;
+      if (imageUrl) this.dom.image.href = imageUrl; else this.dom.image.removeAttribute('href');
+    }
     // the address names the disk in the drive (#disk-15), so it can be sent; ejecting goes back to the tower's
     const inDrive = this.station.open ? this.station.disk : this.station.reading ? this.linkedDisk : undefined;
     if (inDrive !== this.linkedDisk) {

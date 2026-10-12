@@ -6,6 +6,8 @@
 // the fee split checked on chain, the Overmind's note, buys by the launcher and three traders, a holder snapshot whose
 // record re-hashes to its fingerprint, its seal as a memo, and two tampered launches the server must refuse.
 //   npm run lp:rehearse          (MAINNET_RPC=… to read mainnet through your own RPC)
+//   npm run lp:rehearse -- --hold   then keeps the fork and its database running, with six more coins on the wall and a
+//                                   funded test wallet (.rehearse/ui-launcher.json), for trying the site against it
 import { execSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, VersionedTransaction, type AddressLookupTableAccount } from '@solana/web3.js';
@@ -22,7 +24,8 @@ function key(name: string): Keypair {
   if (!existsSync(f)) writeFileSync(f, JSON.stringify([...Keypair.generate().secretKey]), { mode: 0o600 });
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(f, 'utf8'))));
 }
-const K = { treasury: key('treasury'), launcher: key('launcher'), traders: [key('trader-1'), key('trader-2'), key('trader-3')] };
+const K = { treasury: key('treasury'), launcher: key('launcher'), traders: [key('trader-1'), key('trader-2'), key('trader-3')], ui: key('ui-launcher') };
+const HOLD = process.argv.includes('--hold');
 
 Object.assign(process.env, {
   LP_RPC_URL: LOCAL, LP_DAS_URL: 'http://127.0.0.1:1', // no DAS on a fork: snapshots scan the token accounts
@@ -102,13 +105,22 @@ async function parent() {
     await startValidator(loadClones());
     execSync(`dropdb --if-exists ${DB} && createdb ${DB}`, { stdio: 'ignore' });
     code = await new Promise<number>((resolve) => {
-      const child = spawn(process.execPath, [...process.execArgv, new URL(import.meta.url).pathname, '--child'], { stdio: 'inherit', env: process.env });
+      const child = spawn(process.execPath, [...process.execArgv, new URL(import.meta.url).pathname, '--child', ...(HOLD ? ['--hold'] : [])], { stdio: 'inherit', env: process.env });
       child.on('exit', (n) => resolve(n ?? 1));
     });
     if (code !== 3) break;
   }
-  validator?.kill('SIGTERM');
   console.log(code === 0 ? '\nREHEARSAL PASSED' : `\nREHEARSAL FAILED (code ${code})`);
+  if (HOLD && code === 0) {
+    const env = { PORT: '8787', DATABASE_URL: `postgres://localhost/${DB}`, LP_RPC_URL: LOCAL, LP_DAS_URL: 'http://127.0.0.1:1', LP_LIVE: 'true', LP_JITO: 'false',
+      LP_LUT: readFileSync(`${DIR}lut.txt`, 'utf8').trim(), PUBLIC_API_URL: 'http://localhost:8787', SOLANA_CLUSTER: 'devnet', LP_TREASURY_SECRET: JSON.stringify([...K.treasury.secretKey]) };
+    writeFileSync(`${DIR}server.env.json`, JSON.stringify(env));
+    console.log(`holding the fork at ${LOCAL} (db ${DB}); server env in .rehearse/server.env.json. Ctrl-C to stop.`);
+    process.on('SIGINT', () => { validator?.kill('SIGTERM'); process.exit(0); });
+    process.on('SIGTERM', () => { validator?.kill('SIGTERM'); process.exit(0); });
+    await new Promise(() => {});
+  }
+  validator?.kill('SIGTERM');
   process.exit(code);
 }
 
@@ -156,6 +168,7 @@ async function child() {
     // 1. the lookup table, as the operator makes it once (npm run lp:lut)
     const lut = await createLut(connection, K.treasury);
     process.env.LP_LUT = lut.toBase58();
+    writeFileSync(`${DIR}lut.txt`, lut.toBase58());
     for (let s = await local.getSlot(); (await local.getSlot()) < s + 3;) await new Promise((r) => setTimeout(r, 400)); // its entries are usable a slot later
     check('lookup table created', !!(await local.getAddressLookupTable(lut)).value, lut.toBase58());
 
@@ -215,6 +228,12 @@ async function child() {
       const sent = await L.submitBuy(Buffer.from(tx.serialize()));
       check(`${name} buys ${sol} SOL`, sent.ok, sent.error ?? `${b.tokens} tokens quoted`);
     }
+    // creator fees from those buys: distributed to the treasury and the launcher, in the split
+    const { distributeFees } = await import('../src/lp/fees.js');
+    const [tBefore, lBefore] = await Promise.all([local.getBalance(K.treasury.publicKey), local.getBalance(K.launcher.publicKey)]);
+    const paid = await distributeFees();
+    const [tAfter, lAfter] = await Promise.all([local.getBalance(K.treasury.publicKey), local.getBalance(K.launcher.publicKey)]);
+    check('creator fees distributed to the treasury and the launcher', paid >= 1 && lAfter > lBefore, `launcher +${((lAfter - lBefore) / 1e9).toFixed(6)} SOL, treasury ${((tAfter - tBefore) / 1e9).toFixed(6)} SOL (net of the fee it paid)`);
     const replay = await L.submitBuy(Buffer.from(VersionedTransaction.deserialize(Buffer.from((await L.buildBuy(launcher, built.mint, 0.1)).txs[0], 'base64')).serialize()));
     check('an unsigned buy is refused', !replay.ok);
 
@@ -234,6 +253,30 @@ async function child() {
     check('the coin is on the wall list', list.some((x) => x.mint === built.mint && x.snapshots === 2 && x.holders === 4));
 
     writeFileSync(`${DIR}results.json`, JSON.stringify({ mint: built.mint, results }, null, 1));
+    if (HOLD && results.every((x) => x.ok)) {
+      // six more coins for the wall, each with a picture, bought into by the traders; a funded wallet for the site
+      const sharp = (await import('sharp')).default;
+      const coinsToMake = [['Floppy Moon', 'FMOON', '#2b64cc', '☾'], ['Lamport', 'LMPRT', '#d8322c', 'L'], ['Q-Day Club', 'QDAY', '#f3c331', 'Q'],
+        ['Beige Box', 'BEIGE', '#ef7b1f', '▣'], ['Readme', 'README', '#3aa857', '?'], ['Static', 'STATIC', '#7b44b8', '≋']] as const;
+      for (const [name, ticker, colour, glyph] of coinsToMake) {
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="${colour}"/><text x="256" y="330" font-size="260" text-anchor="middle" fill="#fff" font-family="Helvetica">${glyph}</text></svg>`;
+        const up = await coins.saveImage(await sharp(Buffer.from(svg)).png().toBuffer(), 'image/png', 'rehearsal');
+        const b = await L.buildLaunch({ wallet: launcher, name, ticker, description: `${name.toLowerCase()}: a test coin on a local copy of mainnet`, image: 'url' in up ? up.url : undefined });
+        const s = b.txs.map((x) => { const t = VersionedTransaction.deserialize(Buffer.from(x, 'base64')); t.sign([K.launcher]); return t; });
+        const cs = await L.countersign(b.mint, Buffer.from(s[0].serialize()));
+        const rr = await L.runLaunch(b.mint, cs!, Buffer.from(s[1].serialize()), async (mint) => { const c = await coins.coin(mint); await coins.setNote(mint, await coins.launchNote(c!)); });
+        for (const k of K.traders.slice(0, 1 + (ticker.length % 3))) {
+          const bb = await L.buildBuy(k.publicKey.toBase58(), b.mint, 0.3);
+          const tx = VersionedTransaction.deserialize(Buffer.from(bb.txs[0], 'base64')); tx.sign([k]);
+          await L.submitBuy(Buffer.from(tx.serialize()));
+        }
+        await S.snapshot(b.mint);
+        console.log(`  + $${ticker} ${rr.ok ? 'live' : 'failed'} ${b.mint}`);
+      }
+      await S.sealPending(20);
+      await airdrop(K.ui.publicKey, 20);
+      console.log(`  + ui wallet ${K.ui.publicKey.toBase58()} funded`);
+    }
     await pool.end();
     process.exit(results.every((x) => x.ok) ? 0 : 1);
   } catch (e) {

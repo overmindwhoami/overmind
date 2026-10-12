@@ -21,6 +21,8 @@ import { tagOf, tell } from '../activity.js';
 import { buildBuy, buildLaunch, checkFollowUp, confirmLaunch, countersign, LaunchError, runLaunch, submitBuy } from './launch.js';
 import { coin, coinJson, image, launchNote, liveCoins, metadata, saveImage, setNote } from './coins.js';
 import { snapshot, snapshotDue, snapshotRecord, snapshots } from './snapshots.js';
+import { distributeFees } from './fees.js';
+import { ensureLut, lutAddress } from './lut.js';
 import { connection, LP_LAUNCHER_BPS, LP_LIVE, LP_TREASURY_BPS, treasury } from './solana.js';
 
 export interface Reply { status: number; body: unknown; type?: string; cache?: string }
@@ -64,7 +66,7 @@ export async function lpRoute(req: IncomingMessage, path: string, ip: string): P
     if (req.method === 'GET') {
       if (path === 'status') {
         const t = await treasury();
-        return json({ open: LP_LIVE, treasury: t.publicKey.toBase58(), split: { treasury: LP_TREASURY_BPS, launcher: LP_LAUNCHER_BPS }, snapshotHours: Number(process.env.LP_SNAPSHOT_HOURS ?? 4), costSol: 0.03 });
+        return json({ open: LP_LIVE && !!(await lutAddress()), switchedOn: LP_LIVE, lookupTable: (await lutAddress()) || null, treasury: t.publicKey.toBase58(), split: { treasury: LP_TREASURY_BPS, launcher: LP_LAUNCHER_BPS }, snapshotHours: Number(process.env.LP_SNAPSHOT_HOURS ?? 4), costSol: 0.03 });
       }
       if ((m = path.match(/^media\/([a-f0-9]{64})$/))) {
         const img = await image(m[1]);
@@ -152,8 +154,10 @@ export async function lpRoute(req: IncomingMessage, path: string, ip: string): P
   }
 }
 
+let distributedAt = 0;
 /** Launches that landed after their request gave up (slow networks) are finished here; snapshots are taken when due. */
 export async function lpJobs(): Promise<void> {
+  await ensureLut().catch((e) => console.warn('[lp] lookup table not made', (e as Error).message));
   const pending = (await pool.query(`select mint, launcher from lp_coins where status = 'pending' and created_at > now() - interval '1 day' and created_at < now() - interval '2 minutes'`)).rows as { mint: string; launcher: string }[];
   for (const p of pending) {
     const sigs = await connection.getSignaturesForAddress(new (await import('@solana/web3.js')).PublicKey(p.mint), { limit: 5 }).catch(() => []);
@@ -161,5 +165,6 @@ export async function lpJobs(): Promise<void> {
     if (first && !first.err) await confirmLaunch(p.mint, first.signature, onLive).catch(() => {});
   }
   await pool.query(`update lp_coins set status = 'abandoned', mint_secret = null where status = 'pending' and created_at < now() - interval '1 day'`);
+  if (Date.now() - distributedAt > 60 * 60_000) { distributedAt = Date.now(); await distributeFees().catch((e) => console.warn('[lp] distribute failed', (e as Error).message)); }
   await snapshotDue();
 }

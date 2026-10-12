@@ -1,12 +1,13 @@
 /**
  * The launchpad's address lookup table: pump's fixed accounts, so a launch (create + fee split, three signers) fits in
- * one transaction. Owned and paid for by the launchpad treasury (about 0.01 SOL of rent, once). Rebuild after a
- * pump.fun upgrade that changes accounts: `npm run lp:lut` simulates, `SEND=yes npm run lp:lut` creates it and prints
- * LP_LUT to set on the server.
+ * one transaction. Owned and paid for by the launchpad treasury (about 0.01 SOL of rent, once). The server makes it
+ * itself when the launchpad is on and the treasury can pay (ensureLut), and keeps its address in the database; LP_LUT
+ * overrides. Rebuild after a pump.fun upgrade that changes accounts: `SEND=yes npm run lp:lut`.
  */
 import { AddressLookupTableProgram, Connection, Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
 import { launchIxs } from './launch.js';
-import { pump, SOL_MINT, TOKEN, TOKEN_2022, sendIxs } from './solana.js';
+import { pool } from '../db.js';
+import { connection, LP_LIVE, pump, SOL_MINT, TOKEN, TOKEN_2022, sendIxs, treasury } from './solana.js';
 
 const FIXED = ['ComputeBudget111111111111111111111111111111', 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL', 'SysvarRent111111111111111111111111111111111', SOL_MINT];
 
@@ -33,4 +34,24 @@ export async function createLut(conn: Connection, payer: Keypair): Promise<Publi
   await sendIxs([create, extend(addresses.slice(0, 20))], payer);
   for (let i = 20; i < addresses.length; i += 20) await sendIxs([extend(addresses.slice(i, i + 20))], payer);
   return lut;
+}
+
+let known: string | undefined;
+/** The table's address: LP_LUT, else the one the server made (kept in the database). */
+export async function lutAddress(): Promise<string> {
+  if (process.env.LP_LUT) return process.env.LP_LUT;
+  if (known) return known;
+  await pool.query(`create table if not exists lp_settings (key text primary key, value text not null)`);
+  known = (await pool.query(`select value from lp_settings where key = 'lut'`)).rows[0]?.value;
+  return known ?? '';
+}
+/** Makes the table once the launchpad is on and the treasury can pay for it (a launch can't fit without one). */
+export async function ensureLut(): Promise<void> {
+  if (!LP_LIVE || (await lutAddress())) return;
+  const t = await treasury();
+  if ((await connection.getBalance(t.publicKey).catch(() => 0)) < 20_000_000) { console.warn(`[lp] the treasury ${t.publicKey.toBase58()} needs about 0.02 SOL to make the launch lookup table`); return; }
+  const lut = await createLut(connection, t);
+  await pool.query(`insert into lp_settings (key, value) values ('lut', $1) on conflict (key) do update set value = excluded.value`, [lut.toBase58()]);
+  known = lut.toBase58();
+  console.log(`[lp] made the launch lookup table ${known}`);
 }
