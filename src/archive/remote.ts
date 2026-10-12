@@ -126,8 +126,10 @@ export class RemoteArchive implements Archive {
     es.addEventListener('activity', (e) => {
       const a = JSON.parse((e as MessageEvent).data) as Activity & { by: string };
       if (a.kind === 'check' && a.disk !== undefined && a.checks !== undefined) { const d = this.disks.get(a.disk); if (d) d.checks = a.checks; }
-      if (a.by === this.you) return;
-      this.others.push({ kind: a.kind, disk: a.disk, match: a.match, checks: a.checks, at: a.at });
+      const mine = a.by === this.you;
+      // a page never hears its own actions back, except the Overmind's answer to its nomination; others' passes are private
+      if (mine ? a.kind !== 'picked' && a.kind !== 'passed' : a.kind === 'passed') return;
+      this.others.push({ kind: a.kind, disk: a.disk, match: a.match, checks: a.checks, symbol: a.symbol, at: a.at, mine });
       if (this.others.length > 6) this.others.shift();
     });
     es.addEventListener('slot', (e) => {

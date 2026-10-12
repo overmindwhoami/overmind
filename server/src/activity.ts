@@ -7,8 +7,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
-export type Kind = 'open' | 'check' | 'share' | 'talk' | 'docs';
-export interface Activity { kind: Kind; disk?: number; match?: boolean; checks?: number; by: string; at: number }
+export type Kind = 'open' | 'check' | 'share' | 'talk' | 'docs' | 'picked' | 'passed' | 'launch';
+export interface Activity { kind: Kind; disk?: number; match?: boolean; checks?: number; symbol?: string; by: string; at: number }
 
 export const activityEvents = new EventEmitter();
 activityEvents.setMaxListeners(0);

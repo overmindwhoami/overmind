@@ -34,7 +34,7 @@ const Choice = z.object({
 
 export interface Written { item: Item | null; note: string; model: string; qday?: { days: number; reason: string } }
 
-export async function write(candidates: Item[], ctx: { disk: number; minute: number; fascination: string; recent: string[]; rand: () => number; world: string; qday: boolean; early?: boolean }): Promise<Written> {
+export async function write(candidates: Item[], ctx: { disk: number; minute: number; fascination: string; recent: string[]; rand: () => number; world: string; qday: boolean; early?: boolean; nominated?: number }): Promise<Written> {
   if (!candidates.length) return { item: null, note: templateNote(null, ctx.rand, ctx.minute, ctx.fascination), model: 'template' };
   const fallback = (): Written => {
     const item = candidates[Math.floor(ctx.rand() * candidates.length)];
@@ -46,6 +46,7 @@ export async function write(candidates: Item[], ctx: { disk: number; minute: num
   const prompt = `disk ${String(ctx.disk + 1).padStart(4, '0')}, minute ${ctx.minute} of 90. this version of you is fond of ${ctx.fascination}.
 ${ctx.world}
 ${ctx.qday ? 'these candidates are q-day evidence: move your clock if the one you keep changes your guess.' : 'these candidates are not about q-day: leave your clock at 0.'}
+${ctx.nominated !== undefined ? `candidate ${ctx.nominated} was nominated by a visitor at your terminal. keep it only if it deserves to make it through; if you keep it, your note can say a visitor brought it to you.` : ''}
 ${ctx.early ? 'these are your first disks, the ones people read to learn who you are: tie what you keep to your story (the numbers, q-day, why floppies, the drift) whenever it honestly fits.' : ''}
 your last notes (don't repeat their openings or phrases):
 ${ctx.recent.map((n) => `- ${n}`).join('\n') || '- (none yet: this is a fresh start)'}

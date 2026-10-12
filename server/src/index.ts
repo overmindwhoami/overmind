@@ -5,6 +5,7 @@
  *   GET /api/disks?from=&to=    disks in a range (at most 200)
  *   GET /api/disks/:n           one disk with its slots
  *   GET /api/events?v=          server-sent events: slot, media, seal, disk, presence (v: the visitor's id, for the count)
+ *   POST /api/nominate          {url, v}: a visitor's SAVE at the terminal (curated sources only); GET /api/nominations?v= their own
  *   POST /api/activity          {kind: open|share, disk, v} or {kind: docs, v}: what a visitor did, told to the room (no free text)
  *   GET /api/coin               $OMD's numbers for the board (DexScreener, cached a minute; none until OMD_MINT is set)
  *   GET /media/:key             the instrument's stills and loops (CORS, immutable)
@@ -22,6 +23,7 @@ import { MODEL } from './mind.js';
 import { talk } from './talk.js';
 import { arrive, here, presenceEvents } from './presence.js';
 import { activityEvents, lately, tagOf, tell, visitorOf } from './activity.js';
+import { migrateNominations, mine, nominate } from './nominate.js';
 import { createHash } from 'node:crypto';
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -71,6 +73,15 @@ const server = createServer(async (req, res) => {
       if (r.status !== 'limited') tell({ kind: 'talk', by: tagOf(visitorOf(body.v, ip)) }, ip);
       return send(res, 200, r);
     }
+    // a visitor's nomination: a link from a curated source, read from the source itself
+    if (req.method === 'POST' && path === '/api/nominate') {
+      let raw = '';
+      for await (const chunk of req) { raw += chunk; if (raw.length > 2_000) return send(res, 413, { error: 'too long' }); }
+      let body: { url?: string; v?: string } = {};
+      try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'bad json' }); }
+      if (typeof body.url !== 'string' || !body.url.trim()) return send(res, 200, { ok: false, reply: 'give me a link: SAVE https://…' });
+      return send(res, 200, await nominate(body.url.slice(0, 500), visitorOf(body.v, ip), ip));
+    }
     // what a visitor did (opened or shared a disk): a kind and a number, nothing they typed
     if (req.method === 'POST' && path === '/api/activity') {
       let raw = '';
@@ -94,6 +105,7 @@ const server = createServer(async (req, res) => {
       return sol === undefined ? send(res, 502, { error: 'no answer' }) : send(res, 200, { address, sol });
     }
     if (path === '/api/coin') return send(res, 200, await coin());
+    if (path === '/api/nominations') return send(res, 200, await mine(visitorOf(url.searchParams.get('v'), ip)));
     if (path === '/health') {
       const d = await currentDisk();
       return send(res, 200, { ok: true, disk: d?.n ?? null, written: d?.written ?? 0, model: process.env.ANTHROPIC_API_KEY ? MODEL : 'template (no ANTHROPIC_API_KEY)', storage, wallet: await walletInfo() });
@@ -207,6 +219,7 @@ async function schedule() {
 }
 
 await migrate();
+await migrateNominations();
 await ensureDisk();
 const w = await signer();
 console.log(`sealing on ${process.env.SOLANA_CLUSTER ?? 'devnet'} from ${w.publicKey.toBase58()}`);

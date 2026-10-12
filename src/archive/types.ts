@@ -111,4 +111,4 @@ export interface Verification {
 }
 
 /** Something another visitor did: opened, checked or shared a disk, is talking to the Overmind or reading the docs. */
-export interface Activity { kind: 'open' | 'check' | 'share' | 'talk' | 'docs'; disk?: number; match?: boolean; checks?: number; at: number }
+export interface Activity { kind: 'open' | 'check' | 'share' | 'talk' | 'docs' | 'picked' | 'passed' | 'launch'; disk?: number; match?: boolean; checks?: number; symbol?: string; at: number; /** this visitor's own (a nomination of theirs was decided) */ mine?: boolean }

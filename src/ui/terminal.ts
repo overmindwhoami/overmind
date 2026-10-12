@@ -16,6 +16,8 @@ const HELP = [
   'QDAY      my guess at q-day, and why',
   'CHECK     prove the newest sealed disk is untouched',
   'EXPOSED <solana address>   is that wallet open on q-day?',
+  'SAVE <link>   ask me to keep something (archive.org, wikipedia, arxiv…)',
+  'MINE      what happened to the things you asked me to keep',
   'CLEAR     wipe the screen',
   'or just talk to me.',
 ];
@@ -52,6 +54,8 @@ export class Terminal {
       else if (c === 'QDAY' || c === 'Q-DAY') this.qday();
       else if (c === 'CHECK') await this.check();
       else if (c === 'EXPOSED') await this.exposed(args[0]);
+      else if (c === 'SAVE' || c === 'NOMINATE') await this.nominate(args[0]);
+      else if (c === 'MINE') await this.mine();
       else await this.talk(text);
     } finally { this.busy = false; this.onChange(); }
   }
@@ -108,6 +112,27 @@ export class Terminal {
         : 'this address is its own public key: open on q-day. it holds nothing, so there is nothing to lose. yet.');
     } catch { this.say('om', "the chain didn't answer. try again in a moment."); }
   }
+  /** A visitor's nomination: the server reads the link from its source and answers in the Overmind's voice. */
+  private async nominate(url?: string) {
+    if (!url) { this.say('om', 'give me a link: SAVE https://archive.org/details/…'); return; }
+    if (!this.api) { this.say('om', "this is a simulation of me; i can't take nominations here."); return; }
+    try {
+      const r = await fetch(`${this.api}/api/nominate`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ url, v: visitor() }) });
+      const j = (await r.json()) as { reply?: string };
+      this.say('om', j.reply ?? "i couldn't take that one.");
+    } catch { this.say('om', 'static on the line. try again?'); }
+  }
+  private async mine() {
+    if (!this.api) { this.say('om', 'nothing here: this is a simulation of me.'); return; }
+    try {
+      const list = (await (await fetch(`${this.api}/api/nominations?v=${visitor()}`)).json()) as { title: string; status: string; disk: number | null }[];
+      if (!list.length) { this.say('om', "you haven't asked me for anything yet. SAVE <link> to try."); return; }
+      for (const n of list) this.say('sys', `${n.status === 'saved' ? `KEPT  disk ${String((n.disk ?? 0) + 1).padStart(4, '0')}` : n.status === 'passed' ? 'PASSED          ' : 'WAITING         '}  ${n.title.slice(0, 48)}`);
+    } catch { this.say('om', "i couldn't reach my list. try again in a moment."); }
+  }
+  /** Something the Overmind tells this visitor unprompted (their nomination made it, or didn't). */
+  notify(text: string) { this.say('om', text); }
+
   private async talk(text: string) {
     this.chat.push({ role: 'user', content: text });
     if (!this.api) { this.say('om', 'this is a simulation of me. my voice lives on the real server.'); return; }

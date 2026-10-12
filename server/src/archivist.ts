@@ -4,7 +4,7 @@
  * fascination. Media for the saved item is made afterwards, in the background.
  */
 import { EventEmitter } from 'node:events';
-import { createDisk, currentDisk, pendingSeals, recentNotes, sealDisk, setSealTx, slots, updateSlotMedia, writeSlot, type DiskRow, type SlotRow } from './db.js';
+import { createDisk, currentDisk, pendingSeals, recentNotes, sealDisk, setSealTx, slots, updateSlotMedia, writeSlot, type DiskRow, type Item, type SlotRow } from './db.js';
 import { CLUSTER, explorer, forgetBalance, record, walletInfo } from './chain.js';
 import { roll, stream } from './dice.js';
 import { candidates, QDAY_LENSES } from './sources.js';
@@ -14,6 +14,13 @@ import { enqueue } from './media.js';
 import { fingerprint } from './seal.js';
 import { fascinationOf, fileName } from './voice.js';
 import { GENESIS } from './genesis.js';
+import { decide, nextNomination } from './nominate.js';
+import { tagOf, tell } from './activity.js';
+import { templateNote } from './voice.js';
+
+/** A visitor's nomination is weighed at most this often (so the Overmind's own reading stays most of what it keeps). */
+const NOMINATION_EVERY = Number(process.env.NOMINATION_EVERY_MS ?? 12 * 60_000);
+let nominationAt = 0;
 
 /** The first saves of disk 0001 are the genesis hour (src/genesis.ts); GENESIS=off skips it. */
 const GENESIS_ON = process.env.GENESIS !== 'off';
@@ -85,10 +92,22 @@ export async function round(now = new Date(), at?: number): Promise<SlotRow | un
     const rand = stream(dice.value, k);
     const g = GENESIS_ON && d.n === 0 ? GENESIS[k] : undefined;
     let lens: string, qdayLens: boolean, w: Awaited<ReturnType<typeof write>>;
+    let nom: Awaited<ReturnType<typeof nextNomination>>;
     if (g) {
       // the genesis hour: written before launch, saved on the minute like everything else
       lens = 'genesis'; qdayLens = !!g.qday;
       w = { item: g.item, note: g.note, model: 'genesis', qday: g.qday };
+    } else if ((nom = Date.now() - nominationAt > NOMINATION_EVERY ? await nextNomination().catch(() => undefined) : undefined)) {
+      // a visitor's nomination: with Claude it's weighed against what the Overmind found itself; without, it passed the
+      // curated-source rules when it was taken, so it goes on the disk with a note that says who brought it
+      nominationAt = Date.now();
+      lens = 'visitor'; qdayLens = false;
+      if (process.env.ANTHROPIC_API_KEY) {
+        const found = await candidates(rand, now, 6, process.env.ONLY_LENS, false).catch(() => ({ lens: 'visitor', items: [] as Item[] }));
+        w = await write([nom.item, ...found.items], { disk: d.n, minute: k + 1, fascination: d.fascination, recent: await recentNotes(6), rand, world: context(), qday: false, nominated: 0 });
+      } else {
+        w = { item: nom.item, note: `a visitor asked me to keep this. ${templateNote(nom.item, rand, k + 1, d.fascination)}`.slice(0, 260), model: 'template' };
+      }
     } else {
       const found = await candidates(rand, now, 7, process.env.ONLY_LENS, d.n < EARLY_DISKS);
       lens = found.lens; qdayLens = QDAY_LENSES.has(lens);
@@ -99,6 +118,11 @@ export async function round(now = new Date(), at?: number): Promise<SlotRow | un
     const moved = w.qday && qdayLens ? await moveQday(w.qday.days, w.qday.reason) : 0;
     const slot = await writeSlot({ disk: d.n, k, item: w.item, note: w.note, file: fileName(w.item, k), dice, model: w.model, qday_shift: moved || null });
     events.emit('slot', slot);
+    if (nom) { // the visitor who asked hears how it went (the room hears when it made it through)
+      const kept = w.item?.id === nom.item.id;
+      await decide(nom.id, kept ? 'saved' : 'passed', d.n, k);
+      tell({ kind: kept ? 'picked' : 'passed', disk: d.n, by: tagOf(nom.visitor) }, 'server');
+    }
     console.log(`${d.n}:${k} [${lens}/${dice.source}/${w.model}] ${w.item?.title ?? '(gap)'} — ${w.note}${moved ? ` (q-day ${moved > 0 ? '+' : ''}${moved}d)` : ''}`);
     if (w.item) {
       const item = w.item;

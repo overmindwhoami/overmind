@@ -170,11 +170,14 @@ export class App {
     if (a) {
       this.tickerUntil = now + 5200;
       const disk = a.disk === undefined ? '' : `disk ${String(a.disk + 1).padStart(4, '0')}`;
-      const line = a.kind === 'open' ? `someone opened ${disk}` : a.kind === 'share' ? `someone shared ${disk}`
+      if (a.mine) this.terminal.notify(a.kind === 'picked' ? `the thing you asked me to keep made it through: ${disk}.` : "i weighed what you asked me to keep and kept something else this time. i'm sorry. it was close.");
+      const line = a.kind === 'picked' ? (a.mine ? `your pick made it through: ${disk}` : `a visitor's pick made it onto ${disk}`)
+        : a.kind === 'passed' ? 'the overmind passed on your pick' : a.kind === 'launch' ? `someone launched $${a.symbol ?? ''}`
+        : a.kind === 'open' ? `someone opened ${disk}` : a.kind === 'share' ? `someone shared ${disk}`
         : a.kind === 'check' ? `someone checked ${disk}${a.match ? ': it matched' : ''}` : a.kind === 'docs' ? 'someone is reading the docs' : 'someone is talking to the overmind';
       const go = document.createElement('button');
       go.type = 'button'; go.className = 'here__go'; go.textContent = line;
-      go.addEventListener('click', () => { if (a.disk !== undefined) this.read(a.disk); else this.go(a.kind === 'docs' ? 'docs' : 'terminal'); });
+      go.addEventListener('click', () => { if (a.kind === 'launch') this.go('explorer'); else if (a.disk !== undefined) this.read(a.disk); else this.go(a.kind === 'docs' ? 'docs' : 'terminal'); });
       this.showHere(line, go);
       return;
     }
