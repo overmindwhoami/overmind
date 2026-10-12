@@ -32,6 +32,8 @@ const wrapAngle = (a: number) => ((((a % (Math.PI * 2)) + Math.PI * 3) % (Math.P
 const MACHINE_SATURATION = 0.9; // colour only inside the objects (the diskettes read as real colour diskettes)
 const FLIGHT = 1.6; // seconds for the camera to fly between places
 const SEEN = 'overmind.seen';
+/** Where the record was when this browser last looked (saves so far, and when): "you came back" counts from it. */
+const LAST = 'overmind.last';
 /**
  * The walkthrough, in the Overmind's own voice: one part of the scene at a time, framed by the instrument. Short lines,
  * a beat each; the camera moves only when the part is elsewhere (the lineage below, the room).
@@ -55,6 +57,11 @@ const WORDS = {
   room: TOUCH ? 'Tap a name to go there, or' : 'Click anything in the room, or',
 };
 const SETTLED_TOWER: Line[] = [{ text: WORDS.thesis }, { text: WORDS.minute }, { text: WORDS.tower, kind: 'hint', check: true, tour: true }];
+/** What the Overmind says at the places that have no panel of their own. */
+const PLACE_LINES: Partial<Record<PlaceName, Line[]>> = {
+  omd: [{ text: "my coin's board. it shows the numbers once $OMD exists: market cap, a day's volume, a day's change. only numbers that add up.", kind: 'voice' }],
+  mint: [{ text: "lifeboat tickets: a quantum-safe key for your wallet, one a disk. not yet. a ticket would hold your money, so it gets audited first.", kind: 'voice' }],
+};
 const SETTLED_ROOM: Line[] = [{ text: WORDS.thesis }, { text: WORDS.qday }, { text: WORDS.room, kind: 'hint', check: true, tour: true }];
 /** The DIRTYPXLS treatment at the places (dirty.ts): off for now, the room shows as it is. */
 const DITHER = false;
@@ -343,11 +350,33 @@ export class App {
       document.documentElement.classList.add('is-ready');
       // first visit: the tower, out to the room, back in; returning: the tower straight away
       if (this.place === 'tower' && this.room.wake.rest.value === 0) this.startIntro(); // first visit: the walkthrough
-      else if (this.place === 'tower') this.story?.set('tower', SETTLED_TOWER);
+      else if (this.place === 'tower') this.story?.set('tower', this.welcomeBack(SETTLED_TOWER));
+      this.rememberVisit();
       requestAnimationFrame(this.loop);
     });
   }
   private ready = false;
+
+  /** Saves so far across the whole lineage (90 a disk). */
+  private savesSoFar() { const c = this.archive.current(); return c.disk * 90 + c.written; }
+  /**
+   * A returning visitor (away ten minutes or more) hears what happened while they were gone, once, before the usual
+   * lines: "you came back. 214 things made it through since you left."
+   */
+  private welcomeBack(lines: Line[]): Line[] {
+    let last: { at: number; saves: number } | undefined;
+    try { last = JSON.parse(localStorage.getItem(LAST) ?? 'null') ?? undefined; } catch { /* storage blocked */ }
+    const made = last ? this.savesSoFar() - last.saves : 0;
+    if (!last || made < 1 || Date.now() - last.at < 10 * 60_000) return lines;
+    return [{ text: `you came back. ${made.toLocaleString('en-US')} ${made === 1 ? 'thing' : 'things'} made it through since you left.`, kind: 'voice' }, ...lines];
+  }
+  /** Keeps this browser's place in the record current (every minute, and as the page goes away). */
+  private rememberVisit() {
+    const save = () => { try { localStorage.setItem(LAST, JSON.stringify({ at: Date.now(), saves: this.savesSoFar() })); } catch { /* fine */ } };
+    window.setTimeout(save, 15_000); // after the first look, not before (a reload in the first seconds keeps the old mark)
+    window.setInterval(save, 60_000);
+    window.addEventListener('pagehide', save);
+  }
 
   private loop = (t: number) => {
     const dt = Math.min((t - this.previousTime) / 1000, MAX_DT);
@@ -726,6 +755,7 @@ export class App {
     if (!this.introFlight) this.finishIntro(); // choosing somewhere ends the first visit's story
     if (name === 'room' && this.intro.stage === 'off') this.story?.set('room', SETTLED_ROOM);
     if (name === 'tower' && this.intro.stage === 'off') this.story?.set('tower', SETTLED_TOWER);
+    if (PLACE_LINES[name] && this.intro.stage === 'off') this.story?.set(name, PLACE_LINES[name]!);
     if (name === this.place) return;
     this.flightDur = duration;
     if (this.isTouch && this.ready) navigator.vibrate?.(8); // a light tick on phones that have it

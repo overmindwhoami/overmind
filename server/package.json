@@ -13,7 +13,8 @@
     "genesis": "node scripts/build-genesis.mjs",
     "lp:lut": "tsx scripts/lp-lut.ts",
     "lp:rehearse": "tsx scripts/lp-rehearse.ts",
-    "lp": "tsx scripts/lp.ts"
+    "lp": "tsx scripts/lp.ts",
+    "preflight": "tsx scripts/preflight.ts"
   },
   "engines": {
     "node": ">=22"

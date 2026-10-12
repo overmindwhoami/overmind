@@ -172,16 +172,26 @@ export class Tower {
     this.instances = [...list, { slab: this.live, offset: 0 }];
   }
 
+  private mindSaves = -1;
+  private mindFlash = 0;
   /** Per frame: sealing and arrival, the live disk's slow turn and label progress, the lifted disk. */
   update(dt: number, height: number, settings: { roughness: number; edgeGlow: number; glassOpacity: number; coreIntensity: number }, lifted?: { matrix: THREE.Matrix4; open: number }) {
     this.glassMaterial.roughness = settings.roughness;
     this.glassUniforms.uEdgeGlow.value = settings.edgeGlow;
     this.glassUniforms.uGlassOpacity.value = settings.glassOpacity;
-    // the core lights glow inside the stack; one passing through the hovering live disk would put a hot spot on its face
+    // the core lights glow inside the stack; one passing through the hovering live disk would put a hot spot on its face.
+    // They are the Overmind's body: they brighten while it decides (the last seconds before a save, with a faint
+    // flicker) and flash when the save lands.
+    const cur = this.archive.current(), saves = cur.disk * 90 + cur.written;
+    if (this.mindSaves >= 0 && saves > this.mindSaves) this.mindFlash = 1;
+    this.mindSaves = saves;
+    this.mindFlash = Math.max(0, this.mindFlash - dt / 1.4);
+    const think = cur.msToNext > 0 && cur.msToNext < 4000 ? 1 - cur.msToNext / 4000 : 0;
+    const mind = 1 + think * think * 0.7 + (Math.random() - 0.5) * 0.12 * think + this.mindFlash * this.mindFlash * 2.2;
     const liveY = this.liveY();
     this.coreLights.forEach((l, i) => {
       const y = height + (i - 1) * LIGHTS.core.verticalSpacing;
-      l.intensity = settings.coreIntensity;
+      l.intensity = settings.coreIntensity * mind;
       l.position.y = Math.abs(y - liveY) < CORE_CLEAR ? liveY - CORE_CLEAR : y;
     });
 
