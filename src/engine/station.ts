@@ -108,12 +108,15 @@ export class Station {
     this.redraw = 0;
   }
 
-  insert(n: number, worldMatrix: THREE.Matrix4, { check = false } = {}) {
+  /** A save to open once the disk's slots are in (a link to one save: #disk-87-22). */
+  private wantSlot?: number;
+  insert(n: number, worldMatrix: THREE.Matrix4, { check = false, slot }: { check?: boolean; slot?: number } = {}) {
     this.autoCheck = check;
     this.checking = undefined;
     if (this.phase !== 'idle') return;
     this.disk = n; this.start.copy(worldMatrix); this.phase = 'fly'; this.t = 0;
     this.view = 'dir'; this.selected = Math.max(0, this.archive.disk(n).written - 1); this.scroll = Math.max(0, this.selected - ROWS + 1);
+    this.wantSlot = slot;
   }
   eject() { if (this.phase === 'read' || this.phase === 'insert') { this.phase = 'eject'; this.t = 0; this.checking = undefined; } }
 
@@ -168,6 +171,8 @@ export class Station {
       if (this.terminal) { this.drawTerm(clock); return; } // talking from inside the disk: the screen is the conversation
       if (this.redraw > 0) return;
       const slots = this.archive.written(this.disk);
+      // a link to one save: open it once the disk's slots have arrived
+      if (this.wantSlot !== undefined && slots.length > this.wantSlot) { this.selected = this.wantSlot; this.view = 'entry'; this.scroll = Math.max(0, this.selected - ROWS + 1); this.wantSlot = undefined; }
       this.selected = Math.min(this.selected, Math.max(0, slots.length - 1));
       if (this.view === 'entry' && slots[this.selected]) this.screen.draw({ mode: 'entry', disk, slot: slots[this.selected], source: this.play(sourceFor(slots[this.selected].item)), clock });
       else {

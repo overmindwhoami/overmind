@@ -10,7 +10,9 @@ type Place = (typeof PLACE_NAMES)[number] | 'tower';
 /** The page opens on the tower; a hash names a place (#room, #omd, …) or a disk to read (#disk-15). */
 const placeOf = (hash: string): Place => (PLACE_NAMES as readonly string[]).includes(hash.slice(1)) ? (hash.slice(1) as Place) : 'tower';
 const coinOf = (hash: string) => /^#coin-([1-9A-HJ-NP-Za-km-z]{32,44})$/.exec(hash)?.[1];
-const diskOf = (hash: string) => { const m = /^#disk-(\d{1,6})$/.exec(hash); return m && +m[1] > 0 ? +m[1] - 1 : undefined; };
+const diskOf = (hash: string) => { const m = /^#disk-(\d{1,6})(?:-(\d{1,2}))?$/.exec(hash); return m && +m[1] > 0 ? +m[1] - 1 : undefined; };
+/** #disk-87-22: minute 22 of disk 0087 (a link to one save). */
+const slotOf = (hash: string) => { const m = /^#disk-\d{1,6}-(\d{1,2})$/.exec(hash); return m && +m[1] >= 1 && +m[1] <= 90 ? +m[1] - 1 : undefined; };
 
 /** The menu: each item flies the camera to its place in the room; the back button, Esc and the logo return to the room. */
 function wirePlaces(app: App) {
@@ -29,7 +31,7 @@ function wirePlaces(app: App) {
   window.addEventListener('placechange', mark);
   window.addEventListener('wheel', () => queueMicrotask(mark), { passive: true });
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') queueMicrotask(mark); });
-  const route = () => { const d = diskOf(window.location.hash), c = coinOf(window.location.hash); if (c) app.openCoin(c); else if (d !== undefined) app.read(d); else app.go(placeOf(window.location.hash)); mark(); };
+  const route = () => { const d = diskOf(window.location.hash), c = coinOf(window.location.hash); if (c) app.openCoin(c); else if (d !== undefined) app.read(d, false, slotOf(window.location.hash)); else app.go(placeOf(window.location.hash)); mark(); };
   window.addEventListener('hashchange', route);
   if (coinOf(window.location.hash) || diskOf(window.location.hash) !== undefined || placeOf(window.location.hash) !== 'tower') route();
   mark();

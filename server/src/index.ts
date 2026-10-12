@@ -174,18 +174,32 @@ const server = createServer(async (req, res) => {
       return send(res, 200, (await disks(from, to)).map(diskJson));
     }
     // share links: a page that previews as the disk (or coin), and sends people on into the room
-    const share = path.match(/^\/d\/(\d{1,6})(\/card\.png)?$/);
+    // /d/15 is a disk; /d/15/22 is one save on it (minute 22), and opens the reader on that save
+    const share = path.match(/^\/d\/(\d{1,6})(?:\/(\d{1,2}))?(\/card\.png)?$/);
     if (share) {
       const n = Number(share[1]) - 1;
       const [d] = n >= 0 ? await disks(n, n) : [];
       if (!d) return send(res, 404, { error: 'no such disk' });
       const site = shareUrls.site, num = String(n + 1);
-      if (share[2]) {
-        const png = await diskCard(d, await slots(n));
+      const all = await slots(n), minute = share[2] ? Number(share[2]) : undefined;
+      const pick = minute ? all.find((s) => s.k === minute - 1) : undefined;
+      if (minute && !pick) return send(res, 404, { error: 'no such save yet' });
+      if (pick) {
+        if (share[3]) {
+          const png = await diskCard(d, all, pick);
+          res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400', 'access-control-allow-origin': '*' });
+          return res.end(png);
+        }
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=3600' });
+        return res.end(sharePage({ title: `${pick.item?.title ?? 'Nothing came through'} · Disk ${num.padStart(4, '0')}, minute ${minute} · Overmind`, description: pick.note,
+          image: `${site}/d/${num}/${minute}/card.png`, to: `${site}/#disk-${num}-${minute}` }));
+      }
+      if (share[3]) {
+        const png = await diskCard(d, all);
         res.writeHead(200, { 'content-type': 'image/png', 'cache-control': d.sealed_at ? 'public, max-age=86400' : 'public, max-age=300', 'access-control-allow-origin': '*' });
         return res.end(png);
       }
-      const last = (await slots(n)).reverse().find((s) => s.item);
+      const last = [...all].reverse().find((s) => s.item);
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' });
       return res.end(sharePage({ title: `Disk ${num.padStart(4, '0')} · Overmind`, description: last ? `${last.item?.title}: ${last.note}` : 'The record that survives Q-Day.',
         image: `${site}/d/${num}/card.png`, to: `${site}/#disk-${num}` }));

@@ -38,14 +38,14 @@ ${inner}
 <text x="64" y="582" font-family="Menlo, monospace" font-size="22" fill="#8a8a8a">the record that survives q-day</text></svg>`;
 
 /** A sealed (or writing) disk's card: its number, how full, its fingerprint, and its latest save with the note. */
-export async function diskCard(d: DiskRow, slots: SlotRow[]): Promise<Buffer> {
+export async function diskCard(d: DiskRow, slots: SlotRow[], pick?: SlotRow): Promise<Buffer> {
   const name = `DISK ${String(d.n + 1).padStart(4, '0')}`;
-  const last = [...slots].reverse().find((s) => s.item) ?? slots[slots.length - 1];
+  const last = pick ?? [...slots].reverse().find((s) => s.item) ?? slots[slots.length - 1];
   const title = last?.item?.title ?? 'nothing came through';
   const note = wrap(last?.note ?? '', 52, 3);
   const inner = `
 <text x="64" y="200" font-family="Menlo, monospace" font-size="92" font-weight="700" fill="#f2f2f2">${esc(name)}</text>
-<text x="64" y="252" font-family="Menlo, monospace" font-size="26" fill="#8a8a8a">${d.sealed_at ? `sealed · sha256 ${esc((d.fingerprint ?? '').slice(0, 24))}…` : `writing now · ${d.written} of 90`}</text>
+<text x="64" y="252" font-family="Menlo, monospace" font-size="26" fill="#8a8a8a">${pick ? `minute ${pick.k + 1} of 90 · ` : ''}${d.sealed_at ? `sealed · sha256 ${esc((d.fingerprint ?? '').slice(0, pick ? 16 : 24))}…` : `writing now · ${d.written} of 90`}</text>
 <rect x="64" y="284" width="${Math.round((Math.min(90, d.written) / 90) * 1072)}" height="6" fill="#f2f2f2"/><rect x="64" y="284" width="1072" height="6" fill="none" stroke="#333"/>
 <text x="64" y="356" font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#f2f2f2">${esc(cut(title, 56))}</text>
 ${note.map((l, i) => `<text x="64" y="${404 + i * 38}" font-family="Menlo, monospace" font-size="27" fill="#cfcfcf">${i === 0 ? '&gt; ' : '  '}${esc(l)}</text>`).join('')}`;

@@ -945,12 +945,12 @@ export class App {
   blur() { this.focused = undefined; }
 
   /** Lift a disk out of the stack and read it in the machine. */
-  read(n: number, check = false) {
+  read(n: number, check = false, slot?: number) {
     if (!this.ready || this.station.reading || n > this.tower.count) return;
     if (this.place !== 'tower') this.go('tower');
     const slab = this.tower.slab(n);
     this.focused = undefined;
-    this.station.insert(n, this.tower.worldMatrix({ slab, offset: 0 }, new THREE.Matrix4()), { check });
+    this.station.insert(n, this.tower.worldMatrix({ slab, offset: 0 }, new THREE.Matrix4()), { check, slot });
     this.tower.lifted = n;
     this.sound.select(Math.max(-1, Math.min(1, (slab.box.center.x / 0.8) * 0.5)));
     this.announce(`${fmtDisk(n)} is in the drive.`);
