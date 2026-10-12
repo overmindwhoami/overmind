@@ -41,8 +41,8 @@ const LAST = 'overmind.last';
  * The walkthrough, in the Overmind's own voice: one part of the scene at a time, framed by the instrument. Short lines,
  * a beat each; the camera moves only when the part is elsewhere (the lineage below, the room).
  */
-type TourTarget = 'live' | 'label' | 'log' | 'stack' | 'clock' | 'reader';
-const TOUR: (TourStop & { where: 'tower' | 'stack' | 'room'; target: TourTarget; wake?: 'clock' | 'computer' })[] = [
+type TourTarget = 'live' | 'label' | 'log' | 'stack' | 'clock' | 'reader' | 'launch' | 'explorer';
+const TOUR: (TourStop & { where: 'tower' | 'stack' | 'room'; target: TourTarget; wake?: 'clock' | 'computer' | 'rest' })[] = [
   { title: 'the live disk', line: 'this is me, writing. every minute i decide what makes it through.', where: 'tower', target: 'live' },
   { title: 'its label', line: "where it came from: the disk it forked from, and its fingerprint.", where: 'tower', target: 'label' },
   { title: 'the write log', line: 'every save lands here with my note on why i kept it. ninety, and the disk is full.', where: 'tower', target: 'log' },
@@ -50,6 +50,8 @@ const TOUR: (TourStop & { where: 'tower' | 'stack' | 'room'; target: TourTarget;
   { title: 'the lineage', line: 'every disk under it is full and sealed. anyone can check nobody changed them. not even me.', where: 'room', target: 'stack' },
   { title: 'q-day', line: "the red clock is my guess at q-day: the day quantum computers break today's encryption.", where: 'room', target: 'clock', wake: 'clock' },
   { title: 'the reader', line: "put any disk in that machine and i'll read it to you. ask me to check one, and i'll prove it.", where: 'room', target: 'reader', wake: 'computer' },
+  { title: 'the duplicator', line: "anyone can launch a coin through that machine. the moment it's live, it gets a disk on my wall.", where: 'room', target: 'launch', wake: 'rest' },
+  { title: 'the explorer', line: 'every coin launched here hangs on that wall. every few hours i write down who holds each one, and seal it.', where: 'room', target: 'explorer', wake: 'rest' },
 ];
 const FACE_MM = spec.disk.t / 2;
 const TOUCH = window.matchMedia('(hover: none)').matches;
@@ -701,7 +703,7 @@ export class App {
     const MMW = spec.mm;
     if (target === 'live') box(disk(this.tower.count), 45 * MMW, 47 * MMW, FACE_MM * MMW);
     else if (target === 'label') box(disk(this.tower.count), 35 * MMW, 27.8 * MMW, 0.1 * MMW, 0, -19.2 * MMW, FACE_MM * MMW);
-    else if (target === 'stack') { const b = this.room.hitBox('tower'); if (!b) return undefined; for (let i = 0; i < 8; i++) add(new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z)); }
+    else if (target === 'stack' || target === 'launch' || target === 'explorer') { const b = this.room.hitBox(target === 'stack' ? 'tower' : target); if (!b) return undefined; for (let i = 0; i < 8; i++) add(new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z)); }
     else if (target === 'clock') object(this.room.clock.group);
     else if (target === 'reader') object(this.station.pc.group);
     else {

@@ -206,7 +206,8 @@ export class RemoteArchive implements Archive {
         return ((await r.json()) as { result?: { meta?: { logMessages?: string[] } } }).result?.meta?.logMessages;
       };
       const logs = (await fromService().catch(() => undefined)) ?? (await fromRpc().catch(() => undefined));
-      const memo = logs?.find((l) => l.includes('Memo'));
+      // the memo's own text is the "Program log: Memo (len …)" line (not the program's invoke line, which also says Memo)
+      const memo = logs?.find((l) => l.includes('Program log: Memo'));
       if (memo) chain.state = memo.includes(`sha256:${hash}`) ? 'match' : 'mismatch';
     }
     return { bytes: bytes.length, records, hash, sealed, match: hash === sealed, chain };

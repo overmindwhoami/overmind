@@ -98,7 +98,9 @@ export class Terminal {
       this.say('sys', `sealed with:      ${r.sealed.slice(0, 20)}…`);
       this.say(r.match ? 'om' : 'sys', r.match ? 'MATCH. the disk is exactly what i sealed. you checked it yourself.' : 'MISMATCH. the record has changed since it was sealed.');
       if (r.chain.state === 'pending') this.say('sys', 'on solana: on its way. a seal lands a minute or two after a disk fills.');
-      else if (r.chain.state === 'match') this.say('sys', 'on solana: the memo says the same.');
+      else if (r.chain.state === 'match') this.say('sys', `on solana: the memo says the same. tx ${(r.chain.tx ?? '').slice(0, 6)}…`);
+      else if (r.chain.state === 'mismatch') this.say('sys', 'on solana: the memo does NOT match.');
+      else if (r.chain.state === 'unreachable') this.say('sys', 'on solana: no answer from the network right now. try CHECK again in a moment.');
     } catch { this.say('om', "i couldn't reach the archive. try again in a moment."); }
   }
   private async exposed(addr?: string) {
