@@ -142,7 +142,7 @@ export class ScreenRenderer {
     for (const l of this.wrap(item.excerpt || '(no description)', SERIF(19), tw).slice(0, 6)) { g.font = SERIF(19); g.fillText(l, tx, ty); ty += 25; }
     if (link) {
       ty += 10; g.font = SERIF(20); g.fillStyle = '#0000ee';
-      const label = '⏎  Open the real thing';
+      const label = `⏎  Go to the source · ${sourceName(item)}`;
       g.fillText(label, tx, ty); const lw = g.measureText(label).width; g.fillRect(tx, ty + 3, lw, 1.5);
       this.hits.push({ x: tx - 6, y: ty - 22, w: lw + 12, h: 32, hit: { kind: 'link' } });
     }

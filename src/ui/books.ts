@@ -5,7 +5,7 @@
 import { isPreviewId } from '../preview';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const sol = (n: number) => `${n.toLocaleString('en-US', { maximumFractionDigits: 6 })} SOL`;
-const short = (a: string) => `${a.slice(0, 4)}…${a.slice(-4)}`;
+const short = (a: string) => `${a.slice(0, 4)}…${a.slice(-3)}`; // a short stub; the link goes to the full address
 interface Wallet { name: string; role: string; address: string; balance: number | null; in: number; out: number; moves: number; addsUp: boolean | null;
   recent: { sig: string; at: number | null; sol: number; what: string }[] }
 

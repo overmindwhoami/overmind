@@ -21,7 +21,8 @@ const BACK = LABEL_LENGTH - BACK_AT;
 
 export const LABEL_TEMPLATES = ['Index', 'Registry', 'Obsidian', 'Stripe', 'Marker'] as const;
 
-const fmtBlock = (n: number) => n.toLocaleString('en-US').replace(/,/g, ' ');
+/** How full the disk is, as the label says it: saves kept of 90 (the field is named block for the labels' history). */
+const kept = (n: number) => `${n}/90`;
 const gen3 = (g: number) => String(g).padStart(3, '0');
 const HAND = ['"Bradley Hand"', 'Noteworthy', '"Marker Felt"', '"Chalkboard SE"', '"Comic Sans MS"', 'cursive'];
 const PAPER = ['#f4f2ec', '#efede6', '#f6f6f4', '#ebe7dc'];
@@ -89,7 +90,7 @@ const TEMPLATES: ((c: Ctx, d: LabelData, r: (a?: number, b?: number) => number) 
     hand(c, d.parent ? `fork of G${gen3(d.parent)}` : 'genesis', 4, 14.6, 4.2, font, r);
     hand(c, `G${gen3(d.gen)}`, W - 16, 14.6, 4.6, font, r);
     hand(c, `0x${d.hash.slice(0, 6)}…${d.hash.slice(-4)}`, 4, 20.8, 4, font, r);
-    hand(c, `blk ${fmtBlock(d.block)}`, 4, 27, 3.8, font, r);
+    hand(c, `${kept(d.block)} kept`, 4, 27, 3.8, font, r);
     if (d.alive) hand(c, 'LIVE — do not erase', 4, 33.2, 3.6, font, r, '#7a1a1a');
     hand(c, d.born.replace(/-/g, '.'), W - 22, 45.6, 3.4, font, r);
     c.fillStyle = '#555';
@@ -103,7 +104,7 @@ const TEMPLATES: ((c: Ctx, d: LabelData, r: (a?: number, b?: number) => number) 
     sans(c, 'OVERMIND', 3, 6, 3.4, 600, 'left', 0.7);
     sans(c, 'REPLICA REGISTRY', W - 3, 6, 1.7, 600, 'right', 0.35);
     rule(c, 3, 8.4, W - 3, 8.4, 0.35);
-    const rows: [string, string][] = [['GENERATION', `G·${gen3(d.gen)}`], ['PARENT', d.parent ? `G·${gen3(d.parent)}` : '—'], ['BLOCK', fmtBlock(d.block)], ['BORN', d.born]];
+    const rows: [string, string][] = [['GENERATION', `G·${gen3(d.gen)}`], ['PARENT', d.parent ? `G·${gen3(d.parent)}` : '—'], ['KEPT', kept(d.block)], ['BORN', d.born]];
     rows.forEach(([k, v], i) => {
       const y = 11 + i * 7;
       c.lineWidth = 0.18; c.strokeRect(3, y, W - 6, 6);
@@ -125,7 +126,7 @@ const TEMPLATES: ((c: Ctx, d: LabelData, r: (a?: number, b?: number) => number) 
     rule(c, 3.4, 9, W - 3.4, 9, 0.22);
     mono(c, gen3(d.gen), 2.4, 33, 21, 600);
     rule(c, 3.4, 37, W - 3.4, 37, 0.22);
-    mono(c, `BLOCK ${fmtBlock(d.block)}`, 3.4, 41.4, 1.9, 400);
+    mono(c, `KEPT ${kept(d.block)}`, 3.4, 41.4, 1.9, 400);
     mono(c, d.born, W - 3.4, 41.4, 1.9, 400, 'right');
     mono(c, `0x${d.hash.slice(0, 40)}`, 3.4, 44.6, 1.45, 400);
     for (let k = 0; k < 4; k++) c.fillRect(3.4, FRONT - 6 + k * 1.1, W - 6.8, 0.5);
@@ -162,7 +163,7 @@ const TEMPLATES: ((c: Ctx, d: LabelData, r: (a?: number, b?: number) => number) 
       hand(c, old, 38, 27, 4.2, font, r, '#141414');
       c.strokeStyle = '#141414'; rule(c, 37, 25.6, 37 + old.length * 2.2, 25, 0.5);
     }
-    hand(c, `blk ${fmtBlock(d.block)}`, 6, 37, 4, font, r, '#2b3a6b');
+    hand(c, `${kept(d.block)} kept`, 6, 37, 4, font, r, '#2b3a6b');
     if (d.alive) hand(c, 'keep!!', W - 22, 46, 5, font, r, '#8a1414');
   },
 ];

@@ -142,7 +142,7 @@ export class Tower {
     const d = this.archive.disk(n);
     const live = opts.live ?? !d.sealed;
     return {
-      index: n, gen: n + 1, parent: n > 0 ? n : null, hash: d.fingerprint, block: d.written, born: new Date(d.sealedAt).toISOString().slice(0, 10),
+      index: n, gen: n + 1, parent: n > 0 ? n : null, hash: d.fingerprint, block: d.written, born: new Date(d.sealed && d.sealedAt ? d.sealedAt : d.startedAt || Date.now()).toISOString().slice(0, 10), // sealed: the day it sealed; live: the day it began
       label: d.look.label, seed: d.seed, alive: live, progress: live ? d.written : undefined,
       shell: d.look.shell, tint: d.look.tint, open: opts.open ?? (live ? 1 : 0), protect: !live, hub: d.look.hub,
       // the live disk faces the viewer (and the key light): its metal is dimmed so it never flares over the label
