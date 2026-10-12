@@ -77,6 +77,14 @@ const BY_KIND: Record<string, ((t: string, y: string, it: Item) => string)[]> = 
     (t, y) => `on this day in ${y}: ${t}. the calendar remembers. so do i now`,
     (t, y) => `${t}, ${y}, this same date. wikipedia keeps the page; i keep the minute`,
   ],
+  born: [
+    (t, y) => `${t}, born on this day in ${y}. everything that came after started here`,
+    (t, y) => `${y}, this same date: ${t} was born. i'm writing the day down`,
+  ],
+  died: [
+    (t, y) => `${t} died on this day in ${y}. i can't keep a person. i can keep that they were here`,
+    (t, y) => `${y}, this date: ${t} died. writing the name down, carefully`,
+  ],
   newspaper: [
     (_t, y, it) => `a newspaper from ${y}, this same day. ${String(it.creator ?? 'someone').toLowerCase()} printed it for a town that read it once. i'll read it forever`,
     (_t, y) => `${y}. the ads, the weather, the lost dogs. a whole morning on one page. saved`,
@@ -114,7 +122,7 @@ export function templateNote(item: Item | null, r: Rand, minute: number, fascina
   let note = lines ? pick(r, lines)(t, y, item) : pick(r, GENERIC)(t);
   const u = r();
   if (u < 0.2) note = `minute ${minute}. ${note}`;
-  else if (u < 0.27) note = `${note}. reminds me of ${fascination}`;
+  else if (u < 0.27 && item.kind !== 'event' && item.kind !== 'died') note = `${note}. reminds me of ${fascination}`; // never after a tragedy or a death
   return note;
 }
 
