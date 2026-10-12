@@ -12,7 +12,8 @@ export const RENDERER = {
   requires: ['webgl2', 'EXT_color_buffer_float'],
   sceneTarget: { type: 'HalfFloat', samples: 2, depthTexture: true },
   toneMappingInRenderer: 'none', // tone mapping and sRGB encode happen in the final pass
-  pixelRatio: { start: 1, min: 0.75, step: 0.25, maxCap: 2, liteCap: 1.5, targetFps: 120 },
+  // detail before frame rate: start at 1.5×, never below 1×, and hold 60 fps (a 120 Hz screen no longer halves the resolution)
+  pixelRatio: { start: 1.5, min: 1, step: 0.25, maxCap: 2, liteCap: 1.5, targetFps: 60 },
 } as const;
 
 export const CAMERA = {

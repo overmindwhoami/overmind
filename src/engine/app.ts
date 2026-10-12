@@ -27,7 +27,7 @@ const INTERFACE = 'a, button, .lil-gui';
 /** Vertical FOV for an aspect ratio: the design FOV, widened on portrait screens so enough shows horizontally. */
 const fovFor = (aspect: number) => Math.max(CAMERA.fov, (2 * Math.atan(Math.tan((CAMERA.minHorizontalFov * Math.PI) / 360) / aspect) * 180) / Math.PI);
 const wrapAngle = (a: number) => ((((a % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-const MACHINE_SATURATION = 0.72; // mild colour, only inside the machine
+const MACHINE_SATURATION = 0.9; // colour only inside the objects (the diskettes read as real colour diskettes)
 const FLIGHT = 1.6; // seconds for the camera to fly between places
 const SEEN = 'overmind.seen';
 /**
@@ -241,7 +241,7 @@ export class App {
     this.tower = new Tower(this.archive, this.renderer, QUALITY === 'low');
     performance.mark('tower:end');
     this.scene.add(this.tower.group);
-    this.composer = new Composer(this.renderer);
+    this.composer = new Composer(this.renderer, PHONE ? 2 : 4);
     this.sound = new Sound(document.querySelector<HTMLButtonElement>('[data-sound]'));
     this.tracker = new Tracker({ onLock: this.sound.lock, onTick: this.sound.tick, reduced: () => this.reduced });
     const storyRoot = document.querySelector<HTMLElement>('[data-story]');

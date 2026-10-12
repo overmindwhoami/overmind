@@ -89,7 +89,8 @@ void main() {
   vec2 blockUv = (block + 0.5) * uPixel / uResolution;
   bool dirty = uDirty > 0.0 && hash12(block * 1.37 + 11.0) < uDirty && texture(tMask, blockUv).g < 0.5;
   vec2 uv = dirty ? blockUv : vUv;
-  vec2 p = uv - 0.5; float r = length(p); vec2 shift = p * r * uAberration;
+  // the lens fringe is for the monochrome world: colour (the mask) stays registered, or the diskettes split into RGB
+  vec2 p = uv - 0.5; float r = length(p); vec2 shift = p * r * uAberration * (1.0 - texture(tMask, uv).r);
   vec3 c = vec3(texture(tFrame, uv + shift).r, texture(tFrame, uv).g, texture(tFrame, uv - shift).b);
   vec3 b = texture(tBloom, uv).rgb;
   c += mix(b, uTint * luma(b), 0.35) * uBloom;
@@ -134,11 +135,12 @@ export class Composer {
   private u: Record<keyof typeof FRAG, Uniforms>;
   private pass: Record<keyof typeof FRAG, THREE.Mesh>;
 
-  constructor(private renderer: THREE.WebGLRenderer) {
+  /** `samples`: the scene's multisampling (4 on desktop: the room's small coloured disks shimmer at 2; phones' density covers it). */
+  constructor(private renderer: THREE.WebGLRenderer, samples = 2) {
     renderer.getDrawingBufferSize(this.size);
     const { x, y } = this.size;
     const target = (w: number, h: number) => new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: false });
-    this.scene = new THREE.WebGLRenderTarget(x, y, { type: THREE.HalfFloatType, samples: 2, depthTexture: new THREE.DepthTexture(x, y) });
+    this.scene = new THREE.WebGLRenderTarget(x, y, { type: THREE.HalfFloatType, samples, depthTexture: new THREE.DepthTexture(x, y) });
     this.motion = target(x, y);
     this.mask = new THREE.WebGLRenderTarget(Math.max(1, x >> 1), Math.max(1, y >> 1), { depthBuffer: true });
     this.lens = target(x, y);
