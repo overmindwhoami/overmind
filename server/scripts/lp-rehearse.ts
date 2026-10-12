@@ -6,8 +6,8 @@
 // the fee split checked on chain, the Overmind's note, buys by the launcher and three traders, a holder snapshot whose
 // record re-hashes to its fingerprint, its seal as a memo, and two tampered launches the server must refuse.
 //   npm run lp:rehearse          (MAINNET_RPC=… to read mainnet through your own RPC)
-//   npm run lp:rehearse -- --hold   then keeps the fork and its database running, with six more coins on the wall and a
-//                                   funded test wallet (.rehearse/ui-launcher.json), for trying the site against it
+//   npm run lp:rehearse -- --hold   then keeps the fork and its database running, with six more coins on the wall and
+//                                   funded test wallets (.rehearse/ui-*.json), for trying the site against it
 import { execSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, VersionedTransaction, type AddressLookupTableAccount } from '@solana/web3.js';
@@ -24,7 +24,9 @@ function key(name: string): Keypair {
   if (!existsSync(f)) writeFileSync(f, JSON.stringify([...Keypair.generate().secretKey]), { mode: 0o600 });
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(f, 'utf8'))));
 }
-const K = { treasury: key('treasury'), launcher: key('launcher'), traders: [key('trader-1'), key('trader-2'), key('trader-3')], ui: key('ui-launcher') };
+const K = { treasury: key('treasury'), launcher: key('launcher'), traders: [key('trader-1'), key('trader-2'), key('trader-3')], ui: key('ui-launcher'),
+  /** test wallets the site's UI test signs with, one per wallet it pretends to be */
+  uiWallets: ['phantom', 'solflare', 'backpack'].map((n) => key(`ui-${n}`)) };
 const HOLD = process.argv.includes('--hold');
 
 Object.assign(process.env, {
@@ -162,7 +164,15 @@ async function child() {
 
   try {
     await coins.migrateLaunchpad();
-    const airdrop = async (pk: PublicKey, sol: number) => { const s = await local.requestAirdrop(pk, sol * LAMPORTS_PER_SOL); await local.confirmTransaction(s, 'confirmed'); };
+    // the fork's faucet is slow now and then: ask, then wait for the balance itself (asking again if it never comes)
+    const airdrop = async (pk: PublicKey, sol: number) => {
+      const before = await local.getBalance(pk);
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await local.requestAirdrop(pk, sol * LAMPORTS_PER_SOL).catch(() => undefined);
+        for (let i = 0; i < 40; i++) { if ((await local.getBalance(pk)) > before) return; await new Promise((r) => setTimeout(r, 750)); }
+      }
+      throw new Error(`the fork's faucet didn't fund ${pk.toBase58()}`);
+    };
     for (const k of [K.treasury, K.launcher, ...K.traders]) await airdrop(k.publicKey, 50);
 
     // 1. the lookup table, as the operator makes it once (npm run lp:lut)
@@ -278,8 +288,8 @@ async function child() {
         console.log(`  + $${ticker} ${rr.ok ? 'live' : 'failed'} ${b.mint}`);
       }
       await S.sealPending(20);
-      await airdrop(K.ui.publicKey, 20);
-      console.log(`  + ui wallet ${K.ui.publicKey.toBase58()} funded`);
+      for (const k of [K.ui, ...K.uiWallets]) await airdrop(k.publicKey, 20);
+      console.log(`  + ui wallets funded: ${[K.ui, ...K.uiWallets].map((k) => k.publicKey.toBase58().slice(0, 6)).join(', ')}`);
     }
     await pool.end();
     process.exit(results.every((x) => x.ok) ? 0 : 1);

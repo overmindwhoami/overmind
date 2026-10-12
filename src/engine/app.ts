@@ -25,7 +25,7 @@ import { Terminal } from '../ui/terminal';
 import { Launchpad, type LpCoin } from '../archive/launchpad';
 import { CoinSheet, LaunchSheet } from '../ui/launchpad';
 import { BooksSheet } from '../ui/books';
-import type { MintSheet } from '../ui/mint';
+import { LifeboatSoon } from '../ui/lifeboat-soon';
 import spec from './tower-spec.json';
 
 const INTERFACE = 'a, button, .lil-gui, .sheet';
@@ -748,9 +748,12 @@ export class App {
   private coins: LpCoin[] = [];
   private books!: BooksSheet;
   /** The vending machine's lifeboat tickets (test network): loaded when first visited, with the Solana library. */
-  private mint?: MintSheet;
+  private mint?: { root: HTMLElement; show(): void; hide(): void };
   private async openMint() {
-    if (!this.mint) { const { MintSheet } = await import('../ui/mint'); this.mint ??= new MintSheet({}); }
+    // lifeboat tickets aren't ready: the machine explains them. The working sheet (test network) is for local development only,
+    // and is left out of the built site entirely.
+    if (!this.mint && import.meta.env.DEV && new URLSearchParams(window.location.search).has('lifeboat')) { const { MintSheet } = await import('../ui/mint'); this.mint ??= new MintSheet({}); }
+    this.mint ??= new LifeboatSoon();
     if (this.place === 'mint') this.mint.show();
   }
   private lpStatus?: { snapshotHours: number; split: { treasury: number; launcher: number } };

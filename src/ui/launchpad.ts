@@ -126,7 +126,7 @@ export class LaunchSheet {
           <input class="sheet__input" name="x" placeholder="x @handle (optional)" maxlength="60" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(d.x)}" aria-label="X handle (optional)">
           <input class="sheet__input" name="web" placeholder="website (optional)" maxlength="200" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(d.web)}" aria-label="Website (optional)">
         </div>
-        ${walletRow}
+        ${open ? walletRow : ''}
         <button class="sheet__btn sheet__btn--primary lp__go" type="submit" data-go ${open && session.wallet && !this.busy ? '' : 'disabled'}>${!this.lp ? 'the launchpad lives on the real server' : open ? (session.wallet ? `launch · about ${this.status?.costSol ?? 0.03} SOL` : 'connect a wallet to launch') : 'opens after $OMD launches'}</button>
         <p class="sheet__say${this.error ? ' is-error' : ''}" data-say aria-live="polite">${esc(this.message)}</p>
         <p class="sheet__fine">creator fees: ${split}, which pays for your coin's snapshots. nothing here is financial advice.</p>

@@ -58,7 +58,7 @@ html:not(.show-tags) .tag { pointer-events: none; }
 /* Four-corner chrome (24px gutter, 16px at <= 640px) */
 .chrome {
   position: fixed; inset: 0; z-index: 1; display: grid;
-  grid-template-columns: 1fr auto; grid-template-rows: auto 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 1fr auto; /* minmax: a long line on the left never pushes the right column off screen */
   padding: calc(var(--space-gutter) + env(safe-area-inset-top, 0px)) var(--space-gutter) calc(var(--space-gutter) + env(safe-area-inset-bottom, 0px));
   opacity: 0; pointer-events: none;
   transition: opacity var(--dur-reveal) var(--delay-chrome-reveal);
@@ -75,6 +75,9 @@ html:not(.show-tags) .tag { pointer-events: none; }
   color: var(--color-text-secondary); letter-spacing: var(--tracking-ui); white-space: nowrap; transition: opacity var(--dur-ui);
 }
 .here[hidden] { display: none; }
+.here { min-width: 0; max-width: 100%; }
+.here [data-here-text] { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.here__go { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .here__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .here.is-new [data-here-text] { animation: here-new 900ms steps(6, jump-none); }
 .here__go { padding: 0; border: 0; background: none; color: var(--color-text-primary); font: inherit; letter-spacing: inherit; cursor: pointer; text-align: left; }

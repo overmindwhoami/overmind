@@ -105,7 +105,7 @@ export function pages(r: Receipts): Block[][] {
     ],
     [
       { t: 'title', n: '8', text: 'the room' },
-      { t: 'rows', rows: [['docs', 'this manual'], ['$OMD', 'the board: the coin, live'], ['terminal', 'talk to the Overmind'], ['launch', 'the duplicator: launch a coin; it gets a disk on the wall'], ['explorer', 'the wall: every coin, its holders sealed'], ['mint', 'the vending machine: lifeboat tickets (test network)'], ['overmind', 'the tower: every disk, newest on top']] },
+      { t: 'rows', rows: [['docs', 'this manual'], ['$OMD', 'the board: the coin, live'], ['terminal', 'talk to the Overmind'], ['launch', 'the duplicator: launch a coin; it gets a disk on the wall'], ['explorer', 'the wall: every coin, its holders sealed'], ['mint', 'the vending machine: lifeboat tickets (coming soon)'], ['overmind', 'the tower: every disk, newest on top']] },
       { t: 'gap' },
       { t: 'p', text: 'Click a disk on the tower to read it; Share sends a link straight to it. Esc goes back.' },
       { t: 'p', text: 'The line under the name says who else is here and what they just did. Tap it to follow.' },

@@ -4,7 +4,7 @@
  * their wallet, what it's keeping) and answers in its own voice with the live facts. Anything else gets the latest
  * note and a command to try. Lowercase, short, never financial advice.
  */
-export interface Facts { disk?: number; written?: number; sealed?: number; qday?: string; reason?: string | null; reading?: number; saves: { title: string | null; year: string | null; note: string }[] }
+export interface Facts { disk?: number; written?: number; sealed?: number; qday?: string; reason?: string | null; reading?: number; coinLive?: boolean; saves: { title: string | null; year: string | null; note: string }[] }
 
 type Line = (f: Facts) => string;
 const id = (n: number) => String(n + 1).padStart(4, '0');
@@ -21,18 +21,27 @@ const onDisk: Line = (f) => {
   return `disk ${id(f.reading)}. the newest things on it: ${names.join('; ')}. ${said(f)} type DIR for more, WHY for the newest.`;
 };
 const INTENTS: [RegExp, Line[]][] = [
+  [/launch ?pad|duplicator|launch (a|my|your) (coin|token)|how (do|can) i launch/, [
+    () => "the duplicator launches coins. each one gets a disk on my wall, and every few hours i write down who holds it and seal it. it opens after $omd launches.",
+  ]],
+  [/lifeboat|ticket|vending|\bmint\b/, [
+    () => "the vending machine will print lifeboat tickets: one-time keys a quantum computer can't forge. coming soon. it's still being tested, so there's nothing to get yet.",
+  ]],
+  [/explorer|the wall|holders|snapshot/, [
+    () => "the wall is my record of coins launched through me. every few hours i write down who holds each one and seal it, so it can be proven after q-day.",
+  ]],
   // only when the visitor is reading a disk (the line is empty otherwise, and the next intent answers)
   [/\b(this|that|the) (disk|one|floppy)\b|what('s| is) (on|in) (it|here|this)|tell me (about|more)|\babout (it|this)\b|why (this|that|keep|save)/, [onDisk]],
+  [/\b(when|launch(es|ed|ing)?|live yet|go live)\b/, [
+    (f) => f.coinLive ? "$omd is live on pump.fun. its numbers are on the board in the room, next to the books." : "not yet. when $omd launches, the board on the wall flips over. i'll still be here writing.",
+  ]],
   [/\b(financial|invest|buy|sell|price|pump|moon|chart|mcap|market ?cap|ape|lambo|rich|profit)\b|\$?omd\b|\bcoin\b|\btoken\b/, [
-    () => "$omd is my coin, on pump.fun. its numbers go on the board in the room once it's live. what it's worth isn't mine to promise.",
+    (f) => `$omd is my coin, on pump.fun. ${f.coinLive ? 'its numbers are on the board in the room.' : "its numbers go on the board in the room once it's live."} what it's worth isn't mine to promise.`,
     () => "the coin pays for my power and my seals. i don't do price talk. the board on the wall only shows numbers that add up.",
   ]],
   [/q-?day|quantum|qubit|shor|post-?quantum|pqc|encryption|crack|break/, [
     (f) => `q-day is when a quantum computer breaks the locks on wallets and most of the internet. my guess: ${f.qday ?? 'not set'}. type QDAY for why.`,
     (f) => `harvest now, decrypt later: what's locked today gets collected and opened on q-day. my guess is ${f.qday ?? 'not set yet'}. i write in the open: nothing to crack.`,
-  ]],
-  [/\b(when|launch|live yet)\b/, [
-    () => "not yet. when $omd launches, the board on the wall flips over. i'll still be here writing.",
   ]],
   [/\b(wallet|my sol|my funds|safe|exposed|address|private key|public key|seed phrase)\b/, [
     () => "on solana an address is its public key. on q-day that's enough to get in. type EXPOSED and an address to see what's showing.",

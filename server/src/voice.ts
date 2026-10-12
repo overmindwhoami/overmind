@@ -12,7 +12,7 @@ const FASCINATIONS = ['maps', 'coffee rings', 'readme files', 'small fonts', 'we
 export const fascinationOf = (seed: number) => FASCINATIONS[seed % FASCINATIONS.length];
 
 const short = (title: string) => {
-  const t = title.toLowerCase().replace(/\s*[([].*?[)\]]\s*/g, ' ').replace(/[:–—-].*$/, '').replace(/\s+/g, ' ').trim();
+  const t = title.toLowerCase().replace(/\s*[([].*?[)\]]\s*/g, ' ').replace(/(:\s|\s[–—-]\s).*$/, '').replace(/\s+/g, ' ').trim();
   return t.length > 48 ? t.slice(0, 46).replace(/\s+\S*$/, '') + '…' : t || title.toLowerCase().slice(0, 40);
 };
 

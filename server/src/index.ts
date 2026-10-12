@@ -136,7 +136,7 @@ const server = createServer(async (req, res) => {
       }
       res.writeHead(204, { 'access-control-allow-origin': '*' }); return res.end();
     }
-    if (req.method !== 'GET') return send(res, 405, { error: 'read only' });
+    if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'read only' }); // HEAD: as GET, without the body (link checkers)
     if (path === '/api/balance') {
       const address = url.searchParams.get('address') ?? '';
       if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) return send(res, 400, { error: 'not an address' });
