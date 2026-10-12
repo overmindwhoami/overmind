@@ -445,7 +445,10 @@ a.share[data-image]::before { content: '↓ '; }
 .sheet__btn img { border-radius: 4px; }
 .sheet__link { padding: 0; border: 0; background: none; color: var(--color-text-secondary); font: inherit; letter-spacing: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .sheet__close { position: absolute; top: 8px; right: 10px; padding: 4px 8px; border: 0; background: none; color: var(--color-text-secondary); font: inherit; font-size: 1.4em; cursor: pointer; }
-.sheet__actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+.sheet__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 12px; }
+.sheet__list { display: grid; gap: 8px; margin: 0 0 14px; padding: 0 0 0 16px; color: rgb(242 242 242 / 78%); line-height: 1.3; }
+.sheet__list li::marker { color: var(--color-text-secondary); }
+.coin__back { display: block; margin: -2px 0 12px; text-decoration: none; }
 .sheet :focus-visible { outline: 1px solid; outline-offset: 2px; }
 .lp__form { display: grid; grid-template-columns: 96px 1fr; gap: 10px; }
 .lp__form > :not(.lp__image):not(.lp__fields) { grid-column: 1 / -1; }

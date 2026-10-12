@@ -267,7 +267,7 @@ export class App {
       toWall: (mint) => this.openCoin(mint),
       launched: () => void this.refreshCoins(),
     });
-    this.coinSheet = new CoinSheet(this.lp, { launch: () => this.go('launch'), close: () => { if (window.location.hash.startsWith('#coin-')) history.replaceState(null, '', '#explorer'); } });
+    this.coinSheet = new CoinSheet(this.lp, { launch: () => this.go('launch'), close: () => { this.coinSheet.about(this.coins, this.lpStatus); if (window.location.hash.startsWith('#coin-')) history.replaceState(null, '', '#explorer'); } });
     const form = document.querySelector<HTMLFormElement>('[data-term]'), field = form?.querySelector<HTMLInputElement>('input');
     field?.addEventListener('input', () => { this.terminal.input = field.value; this.station.touch(); });
     form?.addEventListener('submit', (e) => {
@@ -712,12 +712,14 @@ export class App {
   private launchSheet!: LaunchSheet;
   private coinSheet!: CoinSheet;
   private coins: LpCoin[] = [];
+  private lpStatus?: { snapshotHours: number; split: { treasury: number; launcher: number } };
   private sheetRaise = 0;
   private async refreshCoins() {
     if (!this.lp || !this.room) return;
     try { this.coins = await this.lp.coins(); } catch { return; }
     this.room.setCoins(this.coins.map((c) => ({ mint: c.mint, ticker: c.ticker, name: c.name, image: c.image, liveAt: c.liveAt })));
-    if (this.place === 'explorer' && !this.coins.length) this.coinSheet.empty();
+    this.lpStatus ??= await this.lp.status().catch(() => undefined);
+    if (this.place === 'explorer' && !this.coinSheet.showing) this.coinSheet.about(this.coins, this.lpStatus);
   }
   /** Opens a coin's disk: the camera goes to the wall, its sheet opens (a #coin-<mint> link lands here too). */
   openCoin(mint: string) {
@@ -779,7 +781,7 @@ export class App {
       if (name === 'terminal') this.termForm.querySelector('input')?.focus({ preventScroll: true });
     }
     if (name === 'launch') void this.launchSheet.show(); else this.launchSheet.hide();
-    if (name === 'explorer') { if (!this.coins.length && this.lp) this.coinSheet.empty(); } else this.coinSheet.hide();
+    if (name === 'explorer') { if (this.lp && !this.coinSheet.showing) this.coinSheet.about(this.coins, this.lpStatus); } else this.coinSheet.hide();
     window.dispatchEvent(new Event('placechange')); // the menu marks where the camera is going
     this.updatePager();
     const label = PLACES.find((p) => p.name === name)?.label;

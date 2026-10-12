@@ -228,15 +228,28 @@ export class CoinSheet {
   }
 
   hide() { this.root.hidden = true; this.current = undefined; }
+  /** A coin is open (refreshes leave it be). */
+  get showing() { return !this.root.hidden && !!this.current; }
 
-  /** Nobody has launched yet: the wall's blank diskettes, and the way to the duplicator. */
-  empty() {
+  /**
+   * The wall, explained: what it is, what happens to every coin on it, what a visitor can do here, and how many there
+   * are. Shown whenever no coin is open.
+   */
+  about(coins: LpCoin[] = [], status?: { snapshotHours: number; split: { treasury: number; launcher: number } }) {
     this.current = undefined;
     this.root.hidden = false;
+    const hours = status?.snapshotHours ?? 4, launcher = (status?.split.launcher ?? 5000) / 100;
+    const sealed = coins.reduce((s, c) => s + c.snapshots, 0), holders = coins.reduce((s, c) => s + (c.holders ?? 0), 0);
     this.root.innerHTML = `
       <p class="sheet__eyebrow">EXPLORER</p>
-      <p class="sheet__voice">&gt; the wall is blank. every coin launched through me gets one of these disks, with its picture on the label.</p>
-      <div class="sheet__actions"><button class="sheet__btn sheet__btn--primary" data-launch type="button">launch one →</button></div>`;
+      <p class="sheet__voice">&gt; ${coins.length ? 'this wall is my record of coins.' : 'this wall is blank, for now.'} every coin launched through me gets one of these disks, with its picture on the label.</p>
+      <ul class="sheet__list">
+        <li>every ${hours} hours i write down who holds each coin, and seal it on solana with sha-256: proof of who held what, before q-day.</li>
+        <li>tap a disk to see its holders over time, and check any snapshot yourself: your browser re-hashes it.</li>
+        <li>the launcher keeps ${launcher}% of the creator fees; the rest pays for the snapshots and their seals.</li>
+      </ul>
+      ${coins.length ? `<dl class="coin__facts"><div><dt>coins</dt><dd>${coins.length}</dd></div><div><dt>holders now</dt><dd>${holders.toLocaleString('en-US')}</dd></div><div><dt>snapshots</dt><dd>${sealed.toLocaleString('en-US')}</dd></div></dl>` : ''}
+      <div class="sheet__actions"><button class="sheet__btn sheet__btn--primary" data-launch type="button">launch a coin →</button>${coins.length ? '<span class="sheet__fine">or tap a disk</span>' : ''}</div>`;
     this.root.querySelector('[data-launch]')!.addEventListener('click', () => this.hooks.launch());
   }
 
@@ -250,7 +263,7 @@ export class CoinSheet {
     if (this.current !== mint) return;
     const list = c.snapshotList ?? [];
     this.root.innerHTML = `
-      <button class="sheet__close" data-close type="button" aria-label="Close">×</button>
+      <button class="sheet__link coin__back" data-close type="button">← the wall</button>
       <div class="coin__head">
         ${c.image ? `<img class="coin__img" alt="" src="${esc(c.image)}" width="72" height="72">` : '<span class="coin__img coin__img--none">$</span>'}
         <div><p class="coin__ticker">$${esc(c.ticker)}</p><p class="coin__name">${esc(c.name)}</p></div>
@@ -273,7 +286,7 @@ export class CoinSheet {
         <a class="sheet__btn sheet__btn--primary" href="${c.pump}" target="_blank" rel="noopener">pump.fun ↗</a>
         <button class="sheet__btn" data-share type="button">share</button>
       </div>`;
-    this.root.querySelector('[data-close]')!.addEventListener('click', () => { this.hide(); this.hooks.close(); });
+    this.root.querySelector('[data-close]')!.addEventListener('click', () => this.hooks.close());
     this.root.querySelector('[data-share]')!.addEventListener('click', async (e) => {
       const url = /(^|\.)overmind\.im$/.test(window.location.hostname) ? `https://overmind.im/c/${c.mint}` : `${window.location.origin}${window.location.pathname}#coin-${c.mint}`;
       try {
