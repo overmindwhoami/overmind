@@ -21,9 +21,11 @@ import { Story, type Line } from '../ui/story';
 import { Walkthrough, type Rect, type TourStop } from '../ui/walkthrough';
 import { PAGE_COUNT, drawPage, pages, type Receipts } from '../machine/docs';
 import { Terminal } from '../ui/terminal';
+import { Launchpad, type LpCoin } from '../archive/launchpad';
+import { CoinSheet, LaunchSheet } from '../ui/launchpad';
 import spec from './tower-spec.json';
 
-const INTERFACE = 'a, button, .lil-gui';
+const INTERFACE = 'a, button, .lil-gui, .sheet';
 /** Vertical FOV for an aspect ratio: the design FOV, widened on portrait screens so enough shows horizontally. */
 const fovFor = (aspect: number) => Math.max(CAMERA.fov, (2 * Math.atan(Math.tan((CAMERA.minHorizontalFov * Math.PI) / 360) / aspect) * 180) / Math.PI);
 const wrapAngle = (a: number) => ((((a % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
@@ -170,6 +172,7 @@ export class App {
     if (a) {
       this.tickerUntil = now + 5200;
       const disk = a.disk === undefined ? '' : `disk ${String(a.disk + 1).padStart(4, '0')}`;
+      if (a.kind === 'launch') void this.refreshCoins();
       if (a.mine) this.terminal.notify(a.kind === 'picked' ? `the thing you asked me to keep made it through: ${disk}.` : "i weighed what you asked me to keep and kept something else this time. i'm sorry. it was close.");
       const line = a.kind === 'picked' ? (a.mine ? `your pick made it through: ${disk}` : `a visitor's pick made it onto ${disk}`)
         : a.kind === 'passed' ? 'the overmind passed on your pick' : a.kind === 'launch' ? `someone launched $${a.symbol ?? ''}`
@@ -248,6 +251,15 @@ export class App {
     for (const b of document.querySelectorAll<HTMLButtonElement>('[data-page]')) b.addEventListener('click', () => this.turnDocs(Number(b.dataset.page)));
     // the terminal: one conversation for the visit; typing goes to the screen as it's typed
     this.terminal = new Terminal(this.archive, (this.archive as { endpoint?: string }).endpoint, () => this.station?.touch());
+    // the launchpad: the launch sheet at the duplicator, the coin sheet at the wall (the live service only)
+    const endpoint = (this.archive as { endpoint?: string }).endpoint;
+    this.lp = endpoint ? new Launchpad(endpoint) : undefined;
+    this.launchSheet = new LaunchSheet(this.lp, {
+      lcd: (a, b) => this.room?.duplicator.lcd.print(a, b),
+      toWall: (mint) => this.openCoin(mint),
+      launched: () => void this.refreshCoins(),
+    });
+    this.coinSheet = new CoinSheet(this.lp, { launch: () => this.go('launch'), close: () => { if (window.location.hash.startsWith('#coin-')) history.replaceState(null, '', '#explorer'); } });
     const form = document.querySelector<HTMLFormElement>('[data-term]'), field = form?.querySelector<HTMLInputElement>('input');
     field?.addEventListener('input', () => { this.terminal.input = field.value; this.station.touch(); });
     form?.addEventListener('submit', (e) => {
@@ -301,6 +313,8 @@ export class App {
     this.room.wakeable('computer', this.station.pc.group);
     this.room.clean(this.place, CLEAN_LAYER);
     void this.watchCoin();
+    void this.refreshCoins();
+    window.setInterval(() => void this.refreshCoins(), 60_000);
     // a first visit (no link to a place, not seen lately) opens in the dark, on the live disk
     const deep = window.location.hash.length > 1 && window.location.hash !== '#debug';
     let seen = false;
@@ -663,6 +677,24 @@ export class App {
     if (this.pager.root) this.pager.root.hidden = this.place !== 'docs';
     if (this.pager.label) this.pager.label.textContent = tall ? `${this.docsPage + 1} / ${PAGE_COUNT}` : `${this.docsPage - (this.docsPage % 2) + 1}–${this.docsPage - (this.docsPage % 2) + 2} / ${PAGE_COUNT}`;
   }
+  /** The launchpad's coins, onto the explorer wall (refreshed every minute, and when someone launches). */
+  private lp?: Launchpad;
+  private launchSheet!: LaunchSheet;
+  private coinSheet!: CoinSheet;
+  private coins: LpCoin[] = [];
+  private async refreshCoins() {
+    if (!this.lp || !this.room) return;
+    try { this.coins = await this.lp.coins(); } catch { return; }
+    this.room.setCoins(this.coins.map((c) => ({ mint: c.mint, ticker: c.ticker, name: c.name, image: c.image, liveAt: c.liveAt })));
+    if (this.place === 'explorer' && !this.coins.length) this.coinSheet.empty();
+  }
+  /** Opens a coin's disk: the camera goes to the wall, its sheet opens (a #coin-<mint> link lands here too). */
+  openCoin(mint: string) {
+    if (this.place !== 'explorer') this.go('explorer');
+    void this.coinSheet.open(mint);
+    if (window.location.hash !== `#coin-${mint}`) history.replaceState(null, '', `#coin-${mint}`);
+  }
+
   /** $OMD on the board: the coin's numbers once it exists, asked every minute (the server shares one lookup). */
   private coin?: Coin;
   private async watchCoin() {
@@ -714,6 +746,8 @@ export class App {
       if (this.termLog) this.termLog.hidden = name !== 'terminal';
       if (name === 'terminal') this.termForm.querySelector('input')?.focus({ preventScroll: true });
     }
+    if (name === 'launch') void this.launchSheet.show(); else this.launchSheet.hide();
+    if (name === 'explorer') { if (!this.coins.length && this.lp) this.coinSheet.empty(); } else this.coinSheet.hide();
     window.dispatchEvent(new Event('placechange')); // the menu marks where the camera is going
     this.updatePager();
     const label = PLACES.find((p) => p.name === name)?.label;
@@ -978,6 +1012,12 @@ export class App {
 
   private onTap() {
     if (this.place === 'room') { const p = this.roomPick(); if (p) this.go(p); return; }
+    if (this.place === 'explorer') { // a coin on the wall: its sheet
+      this.raycaster.setFromCamera(this.pointerTarget, this.camera);
+      const c = this.room.pickCoin(this.raycaster.ray);
+      if (c) this.openCoin(c.mint);
+      return;
+    }
     if (this.place !== 'tower') return;
     if (this.station.reading) {
       if (!this.station.open) return;

@@ -10,8 +10,8 @@
  */
 import * as THREE from 'three';
 import { MM, DiskSet, SHELLS, type FloppyKit, type FloppyRecord } from './floppy/kit';
-import { BLANK_LABEL } from './floppy/labels';
-import { lightScale, type GlassUniforms } from './floppy/materials';
+import { BLANK_LABEL, COIN_LABEL, LabelAtlas } from './floppy/labels';
+import { labelMaterial, lightScale, type GlassUniforms } from './floppy/materials';
 import { Board, BOARD } from '../machine/board';
 import { QClock, CLOCK } from '../machine/clock';
 import { buildDesk, DESK } from '../machine/desk';
@@ -76,7 +76,10 @@ export class Room {
   /** The docs page being read (a tall screen frames that page; a wide one, its whole spread). */
   docsPage = 0;
   /** The blank disks in the room: every vending lane full, one in every wall cubby (tokens take them over as they launch). */
-  private blanks?: { set: DiskSet; entries: { rec: FloppyRecord; matrix: THREE.Matrix4; cell: number }[]; kit: FloppyKit; cell: number };
+  private blanks?: { set: DiskSet; entries: { rec: FloppyRecord; matrix: THREE.Matrix4; cell: number }[]; kit: FloppyKit; cell: number;
+    vend: { rec: FloppyRecord; matrix: THREE.Matrix4; cell: number }[]; wall: { rec: FloppyRecord; matrix: THREE.Matrix4; cell: number }[] };
+  /** The explorer wall's coins, in launch order from the first cubby: each a coloured disk with its own printed label. */
+  private coinWall?: { set: DiskSet; atlas: LabelAtlas; coins: WallCoin[]; images: Map<string, HTMLImageElement>; box: THREE.Box3 };
   private placed = false;
   /** How lit each group is (0 dark … 1 as normal), where it's heading, and how fast it gets there. */
   readonly wake: Record<WakeGroup, { value: number }> = { clock: { value: 1 }, computer: { value: 1 }, rest: { value: 1 } };
@@ -257,6 +260,7 @@ export class Room {
       if (cell !== b.cell) { b.cell = cell; for (const e of b.entries) e.cell = cell; b.set.set(b.entries); }
       b.set.setVisible(this.wake.rest.value > 0.35);
     }
+    this.coinWall?.set.setVisible(this.wake.rest.value > 0.35);
     this.root.position.y = this.floorY;
     this.lift.position.y = base - this.floorY; // the lift column's top, in the root's frame
     this.board.update(dt);
@@ -270,6 +274,64 @@ export class Room {
       if (!first) for (let r = 1; r < 4; r++) this.board.set(r, '', 'left', true);
       this.boardRows.forEach((s, r) => { if (first || r > 0) this.board.set(r, s, 'centre'); });
     }
+  }
+
+  /**
+   * The coins launched through the Overmind, onto the explorer wall: one disk each, in launch order from the first cubby
+   * (the newest 91 when there are more), printed with its picture, ticker and name; the cubbies they don't fill keep
+   * their blank colour diskettes. Pictures print when they arrive.
+   */
+  setCoins(coins: WallCoin[]) {
+    const b = this.blanks;
+    if (!b) return;
+    const shown = coins.slice(-WALL_SLOTS);
+    b.entries = [...b.vend, ...b.wall.slice(shown.length)];
+    b.set.set(b.entries);
+    if (!shown.length && !this.coinWall) return;
+    if (!this.coinWall) {
+      const atlas = new LabelAtlas(3072, undefined, 13, 7);
+      const mat = lightScale(labelMaterial(atlas, b.kit.textures.paper), { env: 0.6, direct: 0 });
+      const kit = { ...b.kit, atlas, parts: b.kit.parts.map((part) => (part.cells ? { ...part, material: mat } : part)) } as FloppyKit;
+      const box = new THREE.Box3();
+      for (const part of b.kit.parts) { part.geometry.computeBoundingBox(); box.union(part.geometry.boundingBox!); }
+      this.coinWall = { set: new DiskSet(kit, WALL_SLOTS, this.root), atlas, coins: [], images: new Map(), box };
+    }
+    const w = this.coinWall;
+    w.coins = shown;
+    const PALETTE = ['#d8322c', '#ef7b1f', '#f3c331', '#3aa857', '#1fa4a4', '#2b64cc', '#7b44b8', '#e2569c'];
+    const recOf = (c: WallCoin): FloppyRecord => {
+      let h = 0; for (const ch of c.mint) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      return { index: -1, gen: 0, parent: null, hash: '0'.repeat(64), block: 0, born: '', label: COIN_LABEL, seed: h, alive: false,
+        shell: 2, tint: 0.5, open: 0, protect: false, hub: (h % 628) / 100, color: new THREE.Color(PALETTE[h % PALETTE.length]),
+        coin: { ticker: c.ticker, name: c.name, mint: c.mint, date: new Date(c.liveAt).toISOString().slice(0, 10), image: w.images.get(c.mint) } };
+    };
+    const draw = () => w.set.set(shown.map((c, i) => ({ rec: recOf(c), matrix: b.wall[i].matrix, cell: w.atlas.cell(i, recOf(c), true) })));
+    draw();
+    for (const c of shown) {
+      if (!c.image || w.images.has(c.mint)) continue;
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => { w.images.set(c.mint, img); const i = w.coins.indexOf(c); if (i >= 0) w.atlas.cell(i, recOf(c), true); };
+      img.src = c.image;
+    }
+  }
+
+  /** The coin disk under a ray on the explorer wall, if any. */
+  pickCoin(ray: THREE.Ray): WallCoin | undefined {
+    const w = this.coinWall, b = this.blanks;
+    if (!w || !b || !w.coins.length) return undefined;
+    this.root.updateMatrixWorld();
+    let best: { coin: WallCoin; d: number } | undefined;
+    const inv = new THREE.Matrix4(), local = new THREE.Ray(), hit = new THREE.Vector3();
+    w.coins.forEach((coin, i) => {
+      inv.multiplyMatrices(this.root.matrixWorld, b.wall[i].matrix).invert();
+      local.copy(ray).applyMatrix4(inv);
+      if (local.intersectBox(w.box, hit)) {
+        const d = hit.applyMatrix4(new THREE.Matrix4().multiplyMatrices(this.root.matrixWorld, b.wall[i].matrix)).distanceTo(ray.origin);
+        if (!best || d < best.d) best = { coin, d };
+      }
+    });
+    return best?.coin;
   }
 
   /** Puts the floppy kit's disks into the vending lanes and the wall's cubbies (matrices in the root's frame). */
@@ -292,18 +354,19 @@ export class Room {
       new THREE.Matrix4().multiplyMatrices(this.scaled.matrix, parent.matrix).multiply(local).decompose(p, q, sc);
       return new THREE.Matrix4().compose(p, q, new THREE.Vector3(1, 1, 1)); // kit disks are already world-sized
     };
-    const entries: { rec: FloppyRecord; matrix: THREE.Matrix4; cell: number }[] = [];
+    const vend: { rec: FloppyRecord; matrix: THREE.Matrix4; cell: number }[] = [], cubbies: typeof vend = [];
     // vending: every lane one colour (like a row of the same snack)
     const lanes = vendingBlanks(), perLane = VEND_TURNS;
     lanes.forEach((m, i) => {
       const lane = Math.floor(i / perLane);
-      entries.push({ rec: coloured(lane * 3 + Math.floor(lane / 5)), matrix: toRoot(this.vending.group, m), cell });
+      vend.push({ rec: coloured(lane * 3 + Math.floor(lane / 5)), matrix: toRoot(this.vending.group, m), cell });
     });
-    // the wall: every colour, mixed
-    for (let i = 0; i < WALL_SLOTS; i++) entries.push({ rec: coloured(Math.floor(r() * PALETTE.length)), matrix: toRoot(wall, wallSlot(i)), cell });
+    // the wall: every colour, mixed (coins take the cubbies from the first, in launch order: setCoins)
+    for (let i = 0; i < WALL_SLOTS; i++) cubbies.push({ rec: coloured(Math.floor(r() * PALETTE.length)), matrix: toRoot(wall, wallSlot(i)), cell });
+    const entries = [...vend, ...cubbies];
     const set = new DiskSet(kit, entries.length, this.root);
     set.set(entries);
-    this.blanks = { set, entries, kit, cell };
+    this.blanks = { set, entries, kit, cell, vend, wall: cubbies };
   }
 
   /**
@@ -484,3 +547,6 @@ export function coinRows(c: Coin): string[] {
   return ['$OMD', `MC $${money(c.mc)}`, c.vol24 === undefined ? '' : `24H VOL $${money(c.vol24)}`,
     c.change24 === undefined ? '' : `24H ${c.change24 >= 0 ? '+' : ''}${c.change24.toFixed(1)}%`];
 }
+
+/** A coin on the explorer wall (from the launchpad's list). */
+export interface WallCoin { mint: string; ticker: string; name: string; image?: string | null; liveAt: number }

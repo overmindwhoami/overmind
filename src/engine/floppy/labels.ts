@@ -9,7 +9,9 @@ import { rng } from './textures';
 
 export interface LabelData { index: number; gen: number; parent: number | null; hash: string; block: number; born: string; label: number; seed: number; alive: boolean;
   /** Slots written so far on a live disk (draws 90 ticks along the bottom of the front panel). */
-  progress?: number }
+  progress?: number;
+  /** A coin launched through the Overmind (COIN_LABEL): its picture, ticker and name, printed on the wall's disks. */
+  coin?: { ticker: string; name: string; mint: string; date: string; image?: CanvasImageSource } }
 
 const W = LABEL.w;
 const FRONT = LABEL.front - (LABEL.edge + LABEL.bend); // straight front panel length
@@ -191,8 +193,41 @@ function blank(c: Ctx) {
   for (let y = 16; y < FRONT - 6; y += 6.2) rule(c, 5, y, W - 5, y, 0.18);
 }
 
+/** A coin's label: a black header strip, its picture, $TICKER and name, the day it launched; its mint on the flap. */
+export const COIN_LABEL = 1001;
+function coinLabel(c: Ctx, d: LabelData) {
+  const k = d.coin!;
+  dieCut(c); c.fillStyle = PAPER[2]; c.fill();
+  c.save(); dieCut(c); c.clip();
+  c.fillStyle = '#111'; c.fillRect(0, 0, W, 7.2);
+  c.fillStyle = '#f2f2f2'; sans(c, 'OVERMIND', 4, 5.2, 2.6, 700, 'left', 0.5); sans(c, 'LAUNCHED HERE', W - 4, 5.2, 2.2, 400, 'right', 0.3);
+  c.restore();
+  // the picture, square, with a hairline
+  const x = 4, y = 10.5, s = 27;
+  if (k.image) { c.save(); c.beginPath(); c.rect(x, y, s, s); c.clip(); c.drawImage(k.image, x, y, s, s); c.restore(); }
+  else { c.fillStyle = '#dcdad3'; c.fillRect(x, y, s, s); c.fillStyle = '#9a978e'; sans(c, '$', x + s / 2, y + s / 2 + 3, 8, 700, 'center'); }
+  c.strokeStyle = 'rgba(20,20,20,0.35)'; c.lineWidth = 0.25; c.strokeRect(x, y, s, s);
+  // ticker and name, fitted to the column beside it
+  const col = W - (x + s + 3) - 4, tx = x + s + 3;
+  c.fillStyle = '#121212';
+  let size = 7.2; c.font = `700 ${size * BIT_SCALE}px ${BIT}`;
+  while (size > 3 && c.measureText(`$${k.ticker}`).width > col) { size -= 0.3; c.font = `700 ${size * BIT_SCALE}px ${BIT}`; }
+  sans(c, `$${k.ticker}`, tx, y + 7.5, size, 700);
+  c.fillStyle = '#3a3a3a';
+  const words = k.name.split(/\s+/), lines: string[] = []; let line = '';
+  c.font = `400 ${3.2 * BIT_SCALE}px ${BIT}`;
+  for (const w of words) { const t = line ? `${line} ${w}` : w; if (c.measureText(t).width > col && line) { lines.push(line); line = w; } else line = t; }
+  if (line) lines.push(line);
+  lines.slice(0, 3).forEach((l, i) => sans(c, l, tx, y + 13.5 + i * 4.4, 3.2, 400));
+  // the line it was written on
+  c.strokeStyle = 'rgba(30,30,30,0.3)'; rule(c, 4, 42, W - 4, 42, 0.2);
+  c.fillStyle = '#4a4a4a'; mono(c, k.date, 4, 47.2, 2.4); mono(c, `${k.mint.slice(0, 4)}…${k.mint.slice(-4)}`, W - 4, 47.2, 2.4, 400, 'right');
+  flap(c, () => { c.fillStyle = '#555'; mono(c, k.mint, W / 2, 9, 1.55, 400, 'center'); });
+}
+
 function paint(c: Ctx, d: LabelData) {
   if (d.label === BLANK_LABEL) { blank(c); return; }
+  if (d.label === COIN_LABEL && d.coin) { coinLabel(c, d); return; }
   TEMPLATES[d.label % TEMPLATES.length](c, d, rng(d.seed ^ 0x51ab));
   if (d.progress !== undefined) drawProgress(c, d.progress);
 }
@@ -203,8 +238,6 @@ function paint(c: Ctx, d: LabelData) {
  * least recently used label. With a renderer, each label is copied into its cell on the GPU (no full re-upload).
  */
 export class LabelAtlas {
-  readonly cols = 10;
-  readonly rows = 6;
   readonly tex: THREE.CanvasTexture;
   readonly canvas = document.createElement('canvas');
   private cellCanvas = document.createElement('canvas');
@@ -216,7 +249,8 @@ export class LabelAtlas {
   private used: number[] = [];
   private clock = 0;
 
-  constructor(width: number, private renderer?: THREE.WebGLRenderer) {
+  /** `cols` × `rows` cells (the tower's atlas is 10 × 6; the explorer wall keeps one of its own, a cell per cubby). */
+  constructor(width: number, private renderer?: THREE.WebGLRenderer, readonly cols = 10, readonly rows = 6) {
     this.cw = Math.floor(width / this.cols);
     this.ch = Math.floor((this.cw * LABEL_LENGTH) / W);
     this.canvas.width = this.cw * this.cols; this.canvas.height = this.ch * this.rows;

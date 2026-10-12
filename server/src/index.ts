@@ -5,6 +5,7 @@
  *   GET /api/disks?from=&to=    disks in a range (at most 200)
  *   GET /api/disks/:n           one disk with its slots
  *   GET /api/events?v=          server-sent events: slot, media, seal, disk, presence (v: the visitor's id, for the count)
+ *   /api/lp/…                   the launchpad (src/lp/routes.ts): launch a coin, its disk on the wall, holder snapshots
  *   POST /api/nominate          {url, v}: a visitor's SAVE at the terminal (curated sources only); GET /api/nominations?v= their own
  *   POST /api/activity          {kind: open|share, disk, v} or {kind: docs, v}: what a visitor did, told to the room (no free text)
  *   GET /api/coin               $OMD's numbers for the board (DexScreener, cached a minute; none until OMD_MINT is set)
@@ -24,6 +25,8 @@ import { talk } from './talk.js';
 import { arrive, here, presenceEvents } from './presence.js';
 import { activityEvents, lately, tagOf, tell, visitorOf } from './activity.js';
 import { migrateNominations, mine, nominate } from './nominate.js';
+import { lpJobs, lpRoute } from './lp/routes.js';
+import { migrateLaunchpad } from './lp/coins.js';
 import { createHash } from 'node:crypto';
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -63,6 +66,13 @@ const server = createServer(async (req, res) => {
   const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
   try {
     if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '86400' }); return res.end(); }
+    // the launchpad: its own routes (reads open; launching only while LP_LIVE is on)
+    if (path.startsWith('/api/lp/')) {
+      const r = await lpRoute(req, path.slice('/api/lp/'.length), ip);
+      const body = Buffer.isBuffer(r.body) ? r.body : typeof r.body === 'string' ? r.body : JSON.stringify(r.body);
+      res.writeHead(r.status, { 'content-type': r.type ?? 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'cache-control': r.cache ?? 'no-store', 'x-content-type-options': 'nosniff' });
+      return res.end(body);
+    }
     // the terminal: the only thing a visitor can send
     if (req.method === 'POST' && path === '/api/chat') {
       let raw = '';
@@ -220,6 +230,8 @@ async function schedule() {
 
 await migrate();
 await migrateNominations();
+await migrateLaunchpad();
+setInterval(() => { lpJobs().catch((e) => console.warn('launchpad jobs failed', e)); }, 5 * 60_000);
 await ensureDisk();
 const w = await signer();
 console.log(`sealing on ${process.env.SOLANA_CLUSTER ?? 'devnet'} from ${w.publicKey.toBase58()}`);
