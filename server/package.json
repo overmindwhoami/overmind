@@ -15,7 +15,8 @@
     "lp:rehearse": "tsx scripts/lp-rehearse.ts",
     "lp": "tsx scripts/lp.ts",
     "preflight": "tsx scripts/preflight.ts",
-    "lenses": "tsx scripts/lenses.ts"
+    "lenses": "tsx scripts/lenses.ts",
+    "rpc:check": "tsx scripts/rpc-check.ts"
   },
   "engines": {
     "node": ">=22"

@@ -6,6 +6,7 @@
  *   space     the planetary K-index and the strongest geomagnetic storm level in NOAA's recent messages
  * Refreshed every five minutes (three small requests); the site gets it with /api/state and as 'watch' events.
  */
+import { MAINNET_RPC } from './rpc.js';
 import { EventEmitter } from 'node:events';
 import { qday, shiftQday, type QdayRow } from './db.js';
 
@@ -31,7 +32,7 @@ async function bitcoin() {
   watch.bitcoin = { spentHour: hour.reduce((a, b) => a + (b.extras?.totalInputs ?? 0), 0), blocks: hour.length, height: blocks[0]?.height ?? 0, at: Date.now() };
 }
 async function solana() {
-  const res = await fetch('https://api.mainnet-beta.solana.com', { method: 'POST', headers: { ...UA, 'content-type': 'application/json' }, signal: AbortSignal.timeout(15_000),
+  const res = await fetch(MAINNET_RPC, { method: 'POST', headers: { ...UA, 'content-type': 'application/json' }, signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getRecentPerformanceSamples', params: [1] }) });
   const s = ((await res.json()) as { result?: { slot: number; numTransactions: number; samplePeriodSecs: number }[] }).result?.[0];
   if (s) watch.solana = { txMinute: Math.round((s.numTransactions * 60) / s.samplePeriodSecs), slot: s.slot, at: Date.now() };

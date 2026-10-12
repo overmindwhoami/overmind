@@ -4,6 +4,7 @@
  * here: LP_TREASURY_SECRET, else generated once and kept in the database, apart from the sealing wallet so the two
  * sets of books never mix), and sending with an honest outcome.
  */
+import { MAINNET_RPC } from '../rpc.js';
 import { createRequire } from 'node:module';
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import bs58 from 'bs58';
@@ -11,7 +12,7 @@ import { ComputeBudgetProgram, Connection, Keypair, PublicKey, TransactionInstru
 import type * as PumpSdkModule from '@pump-fun/pump-sdk';
 import { pool } from '../db.js';
 
-export const RPC_URL = process.env.LP_RPC_URL ?? process.env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com';
+export const RPC_URL = process.env.LP_RPC_URL ?? process.env.SOLANA_RPC_URL ?? MAINNET_RPC;
 export const DAS_URL = process.env.LP_DAS_URL ?? RPC_URL;
 export const SOL_MINT = 'So11111111111111111111111111111111111111112';
 export const TOKEN = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');

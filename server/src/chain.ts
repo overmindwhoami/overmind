@@ -2,17 +2,19 @@
  * Sealing on chain: each sealed disk's fingerprint goes into a Solana memo transaction, so anyone can look it up and
  * check it against the disk's canonical record (GET /api/disks/:n/record, then SHA-256 it).
  *   SOLANA_CLUSTER     devnet (default) | mainnet-beta | testnet
- *   SOLANA_RPC_URL     optional RPC endpoint (defaults to the cluster's public one)
+ *   SOLANA_RPC_URL     optional RPC endpoint (defaults to Helius with HELIUS_API_KEY, else the cluster's public one)
  * The service signs with its own wallet: generated on first start and kept in the database (it only ever holds the
  * little SOL needed for fees, about 0.000005 SOL a seal). Its address is on /health so it can be funded.
  * A seal that can't be recorded (no funds, RPC down) stays pending and is retried; the site shows it as pending.
  */
-import { clusterApiUrl, Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, sendAndConfirmTransaction, Transaction, TransactionInstruction, type Cluster } from '@solana/web3.js';
+import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, sendAndConfirmTransaction, Transaction, TransactionInstruction, type Cluster } from '@solana/web3.js';
+import { rpcFor } from './rpc.js';
 import { pool } from './db.js';
 
 export const CLUSTER = (process.env.SOLANA_CLUSTER ?? 'devnet') as Cluster;
 const MEMO = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
-const connection = new Connection(process.env.SOLANA_RPC_URL ?? clusterApiUrl(CLUSTER), 'confirmed');
+export const CHAIN_RPC = rpcFor(CLUSTER, process.env.SOLANA_RPC_URL);
+const connection = new Connection(CHAIN_RPC, 'confirmed');
 
 let wallet: Keypair | undefined;
 /** The service's signing wallet (created once, then loaded). */

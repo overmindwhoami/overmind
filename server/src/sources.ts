@@ -20,6 +20,7 @@
  *   noaa        space weather alerts (solar storms really do flip bits), with today's picture of the sun
  * The first few disks lean into the lore: more Q-Day watch, GitHub, and a lore lens of floppy and cryptography history.
  */
+import { MAINNET_RPC } from './rpc.js';
 import type { Item, Source } from './db.js';
 import { isSeen } from './db.js';
 
@@ -241,7 +242,7 @@ async function bitcoin(): Promise<Item[]> {
 }
 
 async function solana(): Promise<Item[]> {
-  const res = await fetch('https://api.mainnet-beta.solana.com', { method: 'POST', headers: { ...UA, 'content-type': 'application/json' }, signal: AbortSignal.timeout(15_000),
+  const res = await fetch(MAINNET_RPC, { method: 'POST', headers: { ...UA, 'content-type': 'application/json' }, signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getRecentPerformanceSamples', params: [1] }) });
   const s = ((await res.json()) as { result?: { slot: number; numTransactions: number; numNonVoteTransactions?: number; samplePeriodSecs: number }[] }).result?.[0];
   if (!s) return [];

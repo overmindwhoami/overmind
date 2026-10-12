@@ -12,8 +12,10 @@ import { Connection, PublicKey, type ParsedTransactionWithMeta } from '@solana/w
 import { pool } from './db.js';
 import { signer } from './chain.js';
 import { treasury } from './lp/solana.js';
+import { MAINNET_RPC } from './rpc.js';
 
-const rpc = new Connection(process.env.BOOKS_RPC_URL ?? process.env.LP_RPC_URL ?? process.env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com', 'confirmed');
+export const BOOKS_RPC = process.env.BOOKS_RPC_URL ?? process.env.LP_RPC_URL ?? process.env.SOLANA_RPC_URL ?? MAINNET_RPC;
+const rpc = new Connection(BOOKS_RPC, 'confirmed');
 const PROGRAMS: Record<string, string> = {
   MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr: 'seal (memo)', pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ: 'creator fees',
   '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P': 'pump.fun', AddressLookupTab1e1111111111111111111111111: 'lookup table',
