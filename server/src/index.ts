@@ -9,6 +9,7 @@
  *   POST /api/nominate          {url, v}: a visitor's SAVE at the terminal (curated sources only); GET /api/nominations?v= their own
  *   POST /api/activity          {kind: open|share, disk, v} or {kind: docs, v}: what a visitor did, told to the room (no free text)
  *   GET /api/disks/:n/image     a sealed disk as a real 1.44 MB FAT12 floppy image (mounts in DOSBox or an emulator)
+ *   GET /d/:n, /c/:mint (+ /card.png)  share links: a preview card for X/Telegram, then on into the room (CloudFront routes them here)
  *   GET /api/coin               $OMD's numbers for the board (DexScreener, cached a minute; none until OMD_MINT is set)
  *   GET /media/:key             the instrument's stills and loops (CORS, immutable)
  * ROUND_EVERY_MS overrides the minute (local testing only).
@@ -20,6 +21,8 @@ import { balanceOf, explorer, signer, walletInfo } from './chain.js';
 import { coin } from './coin.js';
 import { recordText } from './seal.js';
 import { floppyImage } from './floppy-image.js';
+import { coinCard, diskCard, sharePage, shareUrls } from './share.js';
+import { coin as lpCoin, image as lpImage } from './lp/coins.js';
 import { refreshWatch, watch, watchEvents } from './watch.js';
 import { get as getMedia, mediaOptions, storage } from './media.js';
 import { MODEL } from './mind.js';
@@ -130,6 +133,39 @@ const server = createServer(async (req, res) => {
       const from = Math.max(0, Number(url.searchParams.get('from') ?? 0) | 0);
       const to = Math.min(from + 199, Number(url.searchParams.get('to') ?? from + 199) | 0);
       return send(res, 200, (await disks(from, to)).map(diskJson));
+    }
+    // share links: a page that previews as the disk (or coin), and sends people on into the room
+    const share = path.match(/^\/d\/(\d{1,6})(\/card\.png)?$/);
+    if (share) {
+      const n = Number(share[1]) - 1;
+      const [d] = n >= 0 ? await disks(n, n) : [];
+      if (!d) return send(res, 404, { error: 'no such disk' });
+      const site = shareUrls.site, num = String(n + 1);
+      if (share[2]) {
+        const png = await diskCard(d, await slots(n));
+        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': d.sealed_at ? 'public, max-age=86400' : 'public, max-age=300', 'access-control-allow-origin': '*' });
+        return res.end(png);
+      }
+      const last = (await slots(n)).reverse().find((s) => s.item);
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' });
+      return res.end(sharePage({ title: `Disk ${num.padStart(4, '0')} · Overmind`, description: last ? `${last.item?.title}: ${last.note}` : 'The record that survives Q-Day.',
+        image: `${site}/d/${num}/card.png`, to: `${site}/#disk-${num}` }));
+    }
+    const coinShare = path.match(/^\/c\/([1-9A-HJ-NP-Za-km-z]{32,44})(\/card\.png)?$/);
+    if (coinShare) {
+      const c = await lpCoin(coinShare[1]);
+      if (!c || c.status !== 'live') return send(res, 404, { error: 'no such coin' });
+      const site = shareUrls.site;
+      if (coinShare[2]) {
+        const id = c.image?.match(/\/api\/lp\/media\/([a-f0-9]{64})$/)?.[1];
+        const pic = id ? (await lpImage(id))?.bytes : undefined;
+        const png = await coinCard(c, pic);
+        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600', 'access-control-allow-origin': '*' });
+        return res.end(png);
+      }
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' });
+      return res.end(sharePage({ title: `$${c.ticker} on the Overmind's wall`, description: c.note ?? `${c.name}: its holders are written down and sealed, so ownership can be proven after Q-Day.`,
+        image: `${site}/c/${c.mint}/card.png`, to: `${site}/#coin-${c.mint}` }));
     }
     const imgPath = path.match(/^\/api\/disks\/(\d+)\/image$/);
     if (imgPath) {
