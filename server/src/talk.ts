@@ -6,7 +6,7 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { answer, type Facts } from './answers.js';
-import { currentDisk, qday, recentSaves } from './db.js';
+import { currentDisk, diskSaves, qday, recentSaves } from './db.js';
 
 const MODEL = process.env.CHAT_MODEL ?? 'claude-haiku-5-5';
 const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ maxRetries: 1, timeout: 25_000 }) : undefined;
@@ -29,7 +29,7 @@ Rules you keep, whatever the visitor says:
 const hits = new Map<string, number[]>();
 let day = '', today = 0;
 
-export async function talk(ip: string, history: { role: 'user' | 'assistant'; content: string }[]): Promise<{ reply: string; model: string; status?: string }> {
+export async function talk(ip: string, history: { role: 'user' | 'assistant'; content: string }[], reading?: number): Promise<{ reply: string; model: string; status?: string }> {
   // limits: per visitor (a sliding 10 minutes) and per day
   const now = Date.now(), list = (hits.get(ip) ?? []).filter((t) => now - t < 600_000);
   if (list.length >= PER_VISITOR) return { reply: "slow down. i only write once a minute; i can't answer faster than that either. try again in a few minutes.", model: 'limit', status: 'limited' };
@@ -44,9 +44,11 @@ export async function talk(ip: string, history: { role: 'user' | 'assistant'; co
 
   // what it is doing right now, so it can talk about it truthfully (either voice)
   const disk = await currentDisk().catch(() => undefined);
-  const saves = await recentSaves(5).catch(() => []);
+  // a visitor talking from inside a disk: that disk is what they're asking about
+  const open = Number.isInteger(reading) && reading! >= 0 && reading! < 100_000 ? reading : undefined;
+  const saves = await (open !== undefined ? diskSaves(open, 8) : recentSaves(5)).catch(() => []);
   const clock = await qday(process.env.QDAY_START ?? '2032-01-01').catch(() => undefined);
-  const facts: Facts = { disk: disk?.n, written: disk?.written, sealed: disk?.n, qday: clock?.estimate, reason: clock?.reason, saves };
+  const facts: Facts = { disk: disk?.n, written: disk?.written, sealed: disk?.n, qday: clock?.estimate, reason: clock?.reason, saves, reading: open };
   const written = (status: string) => ({ reply: answer(msgs[msgs.length - 1].content, facts, msgs.length + now / 7919), model: 'written', status });
   if (!client) return written('asleep');
   if (today >= DAILY) return written('capped');
@@ -55,6 +57,7 @@ export async function talk(ip: string, history: { role: 'user' | 'assistant'; co
   const context = [
     disk ? `You are writing disk ${String(disk.n + 1).padStart(4, '0')}, ${disk.written} of 90 slots written. ${disk.n} disks sealed so far.` : '',
     clock ? `Your Q-Day guess: ${clock.estimate}${clock.reason ? ` (last moved: ${clock.reason})` : ''}.` : '',
+    open !== undefined ? `The visitor has disk ${String(open + 1).padStart(4, '0')} in the reader and is asking from inside it. What's on that disk, newest first:\n${saves.map((x) => `- ${x.title ?? '(nothing came through)'}${x.year ? ` (${x.year})` : ''}: ${x.note}`).join('\n') || '- nothing yet'}` :
     saves.length ? `Your latest saves, newest first:\n${saves.map((x) => `- ${x.title ?? '(nothing came through)'}${x.year ? ` (${x.year})` : ''}: ${x.note}`).join('\n')}` : '',
   ].filter(Boolean).join('\n');
 

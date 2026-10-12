@@ -12,6 +12,8 @@
     "deploy": "bash scripts/deploy.sh"
   },
   "dependencies": {
+    "@noble/hashes": "1.8.0",
+    "@solana/web3.js": "1.98.4",
     "polygon-clipping": "0.15.7",
     "three": "0.186.0"
   },

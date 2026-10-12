@@ -102,9 +102,9 @@ const server = createServer(async (req, res) => {
       if (!within('chat:all', 120, 60_000)) return send(res, 429, { error: 'busy' });
       let raw = '';
       for await (const chunk of req) { raw += chunk; if (raw.length > 8_000) return send(res, 413, { error: 'too long' }); }
-      let body: { messages?: { role: 'user' | 'assistant'; content: string }[]; v?: string } = {};
+      let body: { messages?: { role: 'user' | 'assistant'; content: string }[]; v?: string; disk?: number } = {};
       try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'bad json' }); }
-      const r = await talk(ip, Array.isArray(body.messages) ? body.messages : []);
+      const r = await talk(ip, Array.isArray(body.messages) ? body.messages : [], typeof body.disk === 'number' ? body.disk : undefined);
       count('chat');
       if (r.status !== 'limited') tell({ kind: 'talk', by: tagOf(visitorOf(body.v, ip)) }, ip);
       return send(res, 200, r);

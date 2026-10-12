@@ -27,6 +27,8 @@ export class Terminal {
   input = '';
   busy = false;
   private chat: { role: 'user' | 'assistant'; content: string }[] = [];
+  /** The disk in the drive, when the visitor is talking from inside one (DIR and WHY read it; the Overmind is told). */
+  disk?: number;
 
   constructor(private archive: Archive, private api: string | undefined, private onChange: () => void) {
     this.say('sys', 'OVERMIND TERMINAL · type HELP for commands, or just talk.');
@@ -62,7 +64,7 @@ export class Terminal {
 
   private latest() {
     const cur = this.archive.current();
-    const slots = this.archive.written(cur.disk);
+    const slots = this.archive.written(this.disk ?? cur.disk);
     return slots[slots.length - 1];
   }
   private why() {
@@ -72,10 +74,10 @@ export class Terminal {
     this.say('om', s.note);
   }
   private dir() {
-    const cur = this.archive.current();
-    const slots = this.archive.written(cur.disk).slice(-6).reverse();
+    const cur = this.archive.current(), n = this.disk ?? cur.disk;
+    const all = this.archive.written(n), slots = all.slice(-6).reverse();
     if (!slots.length) { this.say('om', 'nothing on this disk yet.'); return; }
-    this.say('sys', `DISK ${String(cur.disk + 1).padStart(4, '0')} · ${cur.written}/90`);
+    this.say('sys', `DISK ${String(n + 1).padStart(4, '0')} · ${all.length}/90`);
     for (const s of slots) this.say('sys', `${new Date(s.time).toISOString().slice(11, 16)}  ${(s.item?.title ?? '(nothing came through)').slice(0, 54)}`);
   }
   private qday() {
@@ -137,7 +139,7 @@ export class Terminal {
     this.chat.push({ role: 'user', content: text });
     if (!this.api) { this.say('om', 'this is a simulation of me. my voice lives on the real server.'); return; }
     try {
-      const r = await fetch(`${this.api}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: this.chat.slice(-8), v: visitor() }) });
+      const r = await fetch(`${this.api}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: this.chat.slice(-8), v: visitor(), disk: this.disk }) });
       const j = (await r.json()) as { reply?: string };
       const reply = j.reply ?? '…';
       this.chat.push({ role: 'assistant', content: reply });

@@ -76,7 +76,7 @@ export function pages(r: Receipts): Block[][] {
     ],
     [
       { t: 'title', n: '5', text: '$OMD' },
-      { t: 'p', text: "$OMD is the Overmind's coin, launched on pump.fun. It's entertainment first." },
+      { t: 'p', text: "$OMD is the Overmind's coin, launched on pump.fun." },
       { t: 'p', text: "Creator fees pay for the Overmind's running costs and its seals on Solana. The sealing wallet is public, so anyone can see what goes in and what goes out." },
       { t: 'p', text: 'The board on the wall shows the coin\'s numbers once it is live, and only numbers that add up.' },
       { t: 'p', text: 'Nothing here is financial advice.' },

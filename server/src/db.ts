@@ -85,6 +85,10 @@ export async function recentNotes(limit = 6): Promise<string[]> {
 export async function recentSaves(limit = 3): Promise<{ title: string | null; year: string | null; note: string }[]> {
   return (await pool.query(`select item->>'title' as title, item->>'year' as year, note from slots order by time desc limit $1`, [limit])).rows;
 }
+/** What one disk holds, newest first (the disk a visitor is reading, so the Overmind can talk about it). */
+export async function diskSaves(n: number, limit = 8): Promise<{ title: string | null; year: string | null; note: string }[]> {
+  return (await pool.query(`select item->>'title' as title, item->>'year' as year, note from slots where disk = $1 order by k desc limit $2`, [n, limit])).rows;
+}
 export async function createDisk(n: number, seed: number, fascination: string, dice: Dice) {
   await pool.query(`insert into disks (n, seed, fascination, dice) values ($1, $2, $3, $4) on conflict do nothing`, [n, seed, fascination, dice]);
 }

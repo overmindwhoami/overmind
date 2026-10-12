@@ -7,7 +7,7 @@
  * Short by design: everything a visitor needs is on one screen, nothing waits on them to read.
  */
 import { b64ToBytes, bytesToB64, type Launchpad, type LpCoin, type LpStatus, type Sent } from '../archive/launchpad';
-import { connect, onWallets, short, signAll, walletBrowserLinks, wallets, type Connected } from './wallet';
+import { connect, onWallets, session, short, signAll, walletBrowserLinks, wallets } from './wallet';
 
 const DRAFT = 'overmind.launch-draft';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -31,8 +31,6 @@ async function squareImage(file: File): Promise<Blob> {
   throw new Error('That picture is too large. Try a smaller one.');
 }
 
-/** Panels share this: the wallet a visitor connected (for the launch and their first buy). */
-let connected: Connected | undefined;
 
 export class LaunchSheet {
   readonly root = document.createElement('section');
@@ -95,8 +93,8 @@ export class LaunchSheet {
       this.root.querySelector<HTMLFormElement>('[data-buy]')!.addEventListener('submit', (e) => { e.preventDefault(); void this.firstBuy(Number(new FormData(e.target as HTMLFormElement).get('sol'))); });
       return;
     }
-    const walletRow = connected
-      ? `<p class="lp__wallet"><span class="lp__dot" aria-hidden="true"></span>${esc(connected.name)} · ${short(connected.address)} <button class="sheet__link" data-change type="button">change</button></p>`
+    const walletRow = session.wallet
+      ? `<p class="lp__wallet"><span class="lp__dot" aria-hidden="true"></span>${esc(session.wallet.name)} · ${short(session.wallet.address)} <button class="sheet__link" data-change type="button">change</button></p>`
       : ws.length
         ? `<div class="lp__wallets">${ws.map((w, i) => `<button class="sheet__btn" data-wallet="${i}" type="button"><img alt="" src="${esc(w.icon)}" width="18" height="18">${esc(w.name)}</button>`).join('')}</div>`
         : touch()
@@ -116,7 +114,7 @@ export class LaunchSheet {
         </div>
         <textarea class="sheet__input lp__about" name="about" rows="2" maxlength="280" placeholder="what is it about? (optional: the overmind reads it)" aria-label="What is it about">${esc(d.about)}</textarea>
         ${walletRow}
-        <button class="sheet__btn sheet__btn--primary lp__go" type="submit" data-go ${open && connected && !this.busy ? '' : 'disabled'}>${!this.lp ? 'the launchpad lives on the real server' : open ? (connected ? `launch · about ${this.status?.costSol ?? 0.03} SOL` : 'connect a wallet to launch') : 'opens after $OMD launches'}</button>
+        <button class="sheet__btn sheet__btn--primary lp__go" type="submit" data-go ${open && session.wallet && !this.busy ? '' : 'disabled'}>${!this.lp ? 'the launchpad lives on the real server' : open ? (session.wallet ? `launch · about ${this.status?.costSol ?? 0.03} SOL` : 'connect a wallet to launch') : 'opens after $OMD launches'}</button>
         <p class="sheet__say${this.error ? ' is-error' : ''}" data-say aria-live="polite">${esc(this.message)}</p>
         <p class="sheet__fine">creator fees: ${split}, which pays for your coin's snapshots. nothing here is financial advice.</p>
       </form>`;
@@ -138,9 +136,9 @@ export class LaunchSheet {
       try { this.image = await squareImage(file); this.preview(this.image); this.say(''); } catch (err) { this.say((err as Error).message, true); }
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-wallet]').forEach((b) => b.addEventListener('click', async () => {
-      try { connected = await connect(ws[Number(b.dataset.wallet)]); this.say(''); this.render(); } catch (err) { this.say((err as Error).message || 'The wallet didn’t connect.', true); }
+      try { session.wallet = await connect(ws[Number(b.dataset.wallet)]); this.say(''); this.render(); } catch (err) { this.say((err as Error).message || 'The wallet didn’t connect.', true); }
     }));
-    this.root.querySelector('[data-change]')?.addEventListener('click', () => { connected = undefined; this.render(); });
+    this.root.querySelector('[data-change]')?.addEventListener('click', () => { session.wallet = undefined; this.render(); });
   }
 
   private preview(b: Blob) {
@@ -152,7 +150,7 @@ export class LaunchSheet {
   }
 
   private async launch() {
-    if (!this.lp || !connected || this.busy) return;
+    if (!this.lp || !session.wallet || this.busy) return;
     const d = this.draft();
     if (!d.name.trim()) { this.say('give it a name.', true); return; }
     if (!/^[A-Z0-9]{1,10}$/.test(d.ticker)) { this.say('give it a ticker: 1 to 10 letters or numbers.', true); return; }
@@ -163,9 +161,9 @@ export class LaunchSheet {
       if (this.image) { this.say('uploading the picture…'); this.hooks.lcd('UPLOADING', 'PICTURE'); image = (await this.lp.upload(this.image)).url; }
       const attempt = async () => {
         this.say('preparing your coin…'); this.hooks.lcd('PREPARING', `$${d.ticker}`);
-        const built = await this.lp!.launch({ wallet: connected!.address, name: d.name.trim(), ticker: d.ticker, description: d.about.trim() || undefined, image });
-        this.say(`approve it in ${connected!.name}.`); this.hooks.lcd('SIGN IN', 'YOUR WALLET');
-        const signed = await signAll(connected!, built.txs.map(b64ToBytes));
+        const built = await this.lp!.launch({ wallet: session.wallet!.address, name: d.name.trim(), ticker: d.ticker, description: d.about.trim() || undefined, image });
+        this.say(`approve it in ${session.wallet!.name}.`); this.hooks.lcd('SIGN IN', 'YOUR WALLET');
+        const signed = await signAll(session.wallet!, built.txs.map(b64ToBytes));
         this.say('sending it to solana…'); this.hooks.lcd('COPYING...', `$${d.ticker}`);
         const first = await this.lp!.submit(built.mint, signed.map(bytesToB64)).catch((e: Error) => { throw e; });
         return { built, first };
@@ -197,14 +195,14 @@ export class LaunchSheet {
   }
 
   private async firstBuy(sol: number) {
-    if (!this.lp || !connected || !this.done || this.busy) return;
+    if (!this.lp || !session.wallet || !this.done || this.busy) return;
     if (!(sol > 0) || sol > 50) { this.say('between 0 and 50 SOL.', true); return; }
     this.busy = true;
     try {
       this.say('preparing the buy…');
-      const b = await this.lp.buy(connected.address, this.done.mint, sol);
-      this.say(`approve it in ${connected.name}.`);
-      const signed = await signAll(connected, b.txs.map(b64ToBytes));
+      const b = await this.lp.buy(session.wallet.address, this.done.mint, sol);
+      this.say(`approve it in ${session.wallet.name}.`);
+      const signed = await signAll(session.wallet, b.txs.map(b64ToBytes));
       this.say('buying…');
       await this.lp.submitBuy(signed.map(bytesToB64));
       this.say(`bought. your wallet holds $${this.done.ticker.toLowerCase()} now.`);

@@ -153,12 +153,19 @@ export class Station {
   }
 
   /* ---------------------------------------------------------------- screen */
+  private drawTerm(clock: ReturnType<Archive['now']>) {
+    if (this.redraw > 0 || !this.terminal) return;
+    const t = this.terminal;
+    this.screen.draw({ mode: 'term', lines: t.lines.map((l) => ({ who: l.who, text: l.text, shown: t.shown(l) })), input: t.input, busy: t.busy, clock });
+    this.redraw = t.typing ? 1 / 30 : 0.25;
+  }
   private drawScreen(dt: number) {
     const clock = this.archive.now();
     this.redraw -= dt;
     if (this.disk !== undefined && this.phase !== 'return') {
       const disk = this.archive.disk(this.disk);
       if (this.phase === 'fly' || this.phase === 'insert') { if (this.redraw <= 0) { this.screen.draw({ mode: 'load', disk, t: this.phase === 'fly' ? this.t / FLY * 0.6 : 0.6 + (this.t / INSERT) * 0.4, clock }); this.redraw = 1 / 20; } return; }
+      if (this.terminal) { this.drawTerm(clock); return; } // talking from inside the disk: the screen is the conversation
       if (this.redraw > 0) return;
       const slots = this.archive.written(this.disk);
       this.selected = Math.min(this.selected, Math.max(0, slots.length - 1));
@@ -172,13 +179,7 @@ export class Station {
       return;
     }
     // the terminal, while the visitor is at it
-    if (this.terminal) {
-      if (this.redraw > 0) return;
-      const t = this.terminal;
-      this.screen.draw({ mode: 'term', lines: t.lines.map((l) => ({ who: l.who, text: l.text, shown: t.shown(l) })), input: t.input, busy: t.busy, clock });
-      this.redraw = t.typing ? 1 / 30 : 0.25;
-      return;
-    }
+    if (this.terminal) { this.drawTerm(clock); return; }
     // live: the page being saved and the note typing in the writer window
     const cur = this.archive.current(), disk = this.archive.disk(cur.disk);
     const slot = cur.written > 0 ? this.archive.slot(cur.disk, cur.written - 1) : undefined;

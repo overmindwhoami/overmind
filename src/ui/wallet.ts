@@ -30,9 +30,12 @@ export async function connect(w: StdWallet): Promise<Connected> {
   if (!account) throw new Error(`${w.name} didn't share an account.`);
   return { wallet: w, account, address: account.address, name: w.name, icon: w.icon };
 }
-/** Signs every transaction in one wallet prompt, in order. */
-export async function signAll(c: Connected, txs: Uint8Array[]): Promise<Uint8Array[]> {
-  const out = await c.wallet.features['solana:signTransaction']!.signTransaction(...txs.map((transaction) => ({ account: c.account, transaction, chain: 'solana:mainnet' })));
+/** The wallet a visitor connected, shared by every panel (the launchpad, the lifeboat). */
+export const session: { wallet?: Connected } = {};
+
+/** Signs every transaction in one wallet prompt, in order (the lifeboat signs on the test network: chain solana:devnet). */
+export async function signAll(c: Connected, txs: Uint8Array[], chain = 'solana:mainnet'): Promise<Uint8Array[]> {
+  const out = await c.wallet.features['solana:signTransaction']!.signTransaction(...txs.map((transaction) => ({ account: c.account, transaction, chain })));
   return out.map((o) => o.signedTransaction);
 }
 

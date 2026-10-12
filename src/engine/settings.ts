@@ -28,7 +28,7 @@ export const settings = {
   coreIntensity: LIGHTS.core.intensity,
   environmentIntensity: ENVIRONMENT.intensity,
   focus: 0,
-  aperture: POST.depthOfField.aperture,
+  aperture: POST.depthOfField.aperture * (PHONE ? 0.55 : 1), // a small screen reads background blur as low resolution
   lensMaximum: POST.depthOfField.maxRadiusPx,
   shutter: POST.motionBlur.shutter,
   blurCap: POST.motionBlur.capFraction,
@@ -40,6 +40,6 @@ export const settings = {
   saturation: POST.final.saturation,
   aberration: POST.final.aberration,
   vignette: POST.final.vignette.amount,
-  grain: POST.final.grain,
+  grain: POST.final.grain * (PHONE ? 0.5 : 1),
 };
 export type Settings = typeof settings;

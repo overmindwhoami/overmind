@@ -24,6 +24,7 @@ import { Terminal } from '../ui/terminal';
 import { Launchpad, type LpCoin } from '../archive/launchpad';
 import { CoinSheet, LaunchSheet } from '../ui/launchpad';
 import { BooksSheet } from '../ui/books';
+import type { MintSheet } from '../ui/mint';
 import spec from './tower-spec.json';
 
 const INTERFACE = 'a, button, .lil-gui, .sheet';
@@ -60,7 +61,6 @@ const WORDS = {
 const SETTLED_TOWER: Line[] = [{ text: WORDS.thesis }, { text: WORDS.minute }, { text: WORDS.tower, kind: 'hint', check: true, tour: true }];
 /** What the Overmind says at the places that have no panel of their own. */
 const PLACE_LINES: Partial<Record<PlaceName, Line[]>> = {
-  mint: [{ text: "lifeboat tickets: a quantum-safe key for your wallet, one a disk. not yet. a ticket would hold your money, so it gets audited first.", kind: 'voice' }],
 };
 const SETTLED_ROOM: Line[] = [{ text: WORDS.thesis }, { text: WORDS.qday }, { text: WORDS.room, kind: 'hint', check: true, tour: true }];
 /** The DIRTYPXLS treatment at the places (dirty.ts): off for now, the room shows as it is. */
@@ -204,10 +204,28 @@ export class App {
     el.classList.remove('is-new'); void el.offsetWidth; el.classList.add('is-new');
   }
   private termKey = '';
+  /** The terminal's input shows at the terminal, and while a disk is in the drive (ask about it). */
+  private termShown = '';
+  private updateTermForm() {
+    const form = this.termForm, field = form?.querySelector<HTMLInputElement>('input');
+    const reading = this.station.open && this.place === 'tower';
+    const talking = this.station.reading && !!this.station.terminal;
+    const key = `${this.place === 'terminal'}:${reading}:${talking}`;
+    if (!form || !field || key === this.termShown) return;
+    this.termShown = key;
+    form.hidden = !(this.place === 'terminal' || reading);
+    if (this.termLog) this.termLog.hidden = !(this.place === 'terminal' || talking);
+    field.placeholder = reading ? 'ask about this disk, or type HELP' : 'talk to the overmind, or type HELP';
+    document.documentElement.classList.toggle('is-talking', talking);
+    const back = document.querySelector<HTMLElement>('[data-todisk]');
+    if (back) back.hidden = !talking;
+    if (!this.station.reading && this.place !== 'terminal' && this.station.terminal) this.station.terminal = undefined; // ejected: the screen is the screen again
+    if (!this.station.reading) this.terminal.disk = undefined;
+  }
   /** The phone's transcript of the terminal (the CRT is too small to read there). */
   private updateTermLog() {
     const el = this.termLog;
-    if (!el || this.place !== 'terminal') return;
+    if (!el || !(this.place === 'terminal' || (this.station.reading && this.station.terminal))) return;
     const lines = this.terminal.lines.slice(-14);
     const key = lines.map((l) => `${l.at}:${this.terminal.shown(l)}`).join('|');
     if (key === this.termKey) return;
@@ -232,9 +250,9 @@ export class App {
 
   constructor(archive: Archive = new SimArchive()) {
     this.archive = archive;
-    // phones start sharp (2×), climb toward 2.5× while frames keep up, and never drop below 1.5×
+    // phones start at their ceiling (2.5× on a 3× screen) and only step down if frames can't keep up (never below 1.75×)
     this.resolution = PHONE
-      ? new Resolution(settings.pixelRatio, Math.min(1.5, settings.pixelRatio), Math.min(2, settings.pixelRatio))
+      ? new Resolution(settings.pixelRatio, Math.min(1.75, settings.pixelRatio), settings.pixelRatio)
       : new Resolution(settings.pixelRatio, RENDERER.pixelRatio.min, RENDERER.pixelRatio.start);
     this.renderer = new THREE.WebGLRenderer({ antialias: RENDERER.antialias, powerPreference: RENDERER.powerPreference, stencil: RENDERER.stencil });
     this.renderer.setPixelRatio(this.pixelRatio());
@@ -275,8 +293,19 @@ export class App {
       e.preventDefault();
       if (!field) return;
       const q = field.value; field.value = ''; this.terminal.input = '';
+      // reading a disk: the screen turns to the conversation, with that disk in the drive (Back to the disk returns)
+      if (this.station.reading && !this.station.terminal) { this.terminal.disk = this.station.disk; this.station.terminal = this.terminal; this.station.touch(); }
       void this.terminal.submit(q);
     });
+    // the on-screen keyboard: its height, so the input can sit on it (phones)
+    const vv = window.visualViewport;
+    const keyboard = () => {
+      const h = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+      document.documentElement.style.setProperty('--kb', `${Math.round(h)}px`);
+      document.documentElement.classList.toggle('has-keyboard', h > 80);
+    };
+    vv?.addEventListener('resize', keyboard); vv?.addEventListener('scroll', keyboard);
+    document.querySelector('[data-todisk]')?.addEventListener('click', () => { this.station.terminal = undefined; this.station.touch(); });
     if (storyRoot) this.story = new Story(storyRoot, () => this.checkDisk(), () => this.reduced, () => this.startIntro());
     const logRoot = document.querySelector<HTMLElement>('[data-log]');
     if (logRoot) this.log = new WriteLog(logRoot, this.archive, () => this.reduced);
@@ -434,7 +463,7 @@ export class App {
     // reading: the camera goes to the machine's screen
     const b = this.station.blend * this.station.blend * (3 - 2 * this.station.blend);
     if (b > 0) {
-      const r = this.station.readerCamera(this.camera);
+      const r = this.station.readerCamera(this.camera, window.innerWidth <= 640 && this.camera.aspect < 0.8 ? 0.38 : 0);
       this.camera.position.lerp(r.pos, b);
       this.lookAt.lerp(r.look, b);
       this.camera.up.lerp(new THREE.Vector3(0, 1, 0), b).normalize();
@@ -465,6 +494,7 @@ export class App {
     this.updateRoomLabel();
     this.updateTags();
     this.updateTermLog();
+    this.updateTermForm();
     this.updatePresence();
     if (this.station.reading || this.place !== 'tower' || this.flightT < 1 || this.tour.active) this.hover = undefined;
     else if (this.focused) this.hover = this.focused;
@@ -714,6 +744,12 @@ export class App {
   private coinSheet!: CoinSheet;
   private coins: LpCoin[] = [];
   private books!: BooksSheet;
+  /** The vending machine's lifeboat tickets (test network): loaded when first visited, with the Solana library. */
+  private mint?: MintSheet;
+  private async openMint() {
+    if (!this.mint) { const { MintSheet } = await import('../ui/mint'); this.mint ??= new MintSheet({}); }
+    if (this.place === 'mint') this.mint.show();
+  }
   private lpStatus?: { snapshotHours: number; split: { treasury: number; launcher: number } };
   private sheetRaise = 0;
   private async refreshCoins() {
@@ -778,12 +814,14 @@ export class App {
     this.station.terminal = name === 'terminal' ? this.terminal : undefined;
     this.station.touch();
     if (this.termForm) {
+      this.termShown = ''; // the form follows the place (updateTermForm)
       this.termForm.hidden = name !== 'terminal';
       if (this.termLog) this.termLog.hidden = name !== 'terminal';
       if (name === 'terminal') this.termForm.querySelector('input')?.focus({ preventScroll: true });
     }
     if (name === 'launch') void this.launchSheet.show(); else this.launchSheet.hide();
     if (name === 'omd') void this.books.show(); else this.books.hide();
+    if (name === 'mint') void this.openMint(); else this.mint?.hide();
     if (name === 'explorer') { if (this.lp && !this.coinSheet.showing) this.coinSheet.about(this.coins, this.lpStatus); } else this.coinSheet.hide();
     window.dispatchEvent(new Event('placechange')); // the menu marks where the camera is going
     this.updatePager();
@@ -803,7 +841,7 @@ export class App {
     else if (this.place === 'terminal') { const r = this.station.readerCamera(this.camera, window.innerWidth <= 640 && this.camera.aspect < 0.8 ? 0.5 : 0); pos = r.pos; look = r.look; focus = r.distance; }
     else { const v = this.room.view(this.place, this.camera, this.place === 'room' ? this.roomYaw : 0); pos = v.pos; look = v.look; focus = v.distance; if ('up' in v && v.up) up = v.up; }
     // a phone with a launchpad sheet open: the object rises into the top of the frame, clear of the sheet
-    const sheet = this.camera.aspect < 0.8 ? (this.place === 'launch' && !this.launchSheet.root.hidden ? 0.55 : this.place === 'explorer' && !this.coinSheet.root.hidden ? 0.5 : this.place === 'omd' && !this.books.root.hidden ? 0.5 : 0) : 0;
+    const sheet = this.camera.aspect < 0.8 ? (this.place === 'launch' && !this.launchSheet.root.hidden ? 0.55 : this.place === 'explorer' && !this.coinSheet.root.hidden ? 0.5 : this.place === 'omd' && !this.books.root.hidden ? 0.5 : this.place === 'mint' && this.mint && !this.mint.root.hidden ? 0.5 : 0) : 0;
     this.sheetRaise += (sheet - this.sheetRaise) * (1 - Math.exp(-dt * 6));
     if (this.sheetRaise > 0.001 && this.place !== 'tower') {
       const shift = up.clone().multiplyScalar(-this.sheetRaise * focus * Math.tan((this.camera.fov * Math.PI) / 360));

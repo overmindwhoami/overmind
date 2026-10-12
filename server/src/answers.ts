@@ -4,7 +4,7 @@
  * their wallet, what it's keeping) and answers in its own voice with the live facts. Anything else gets the latest
  * note and a command to try. Lowercase, short, never financial advice.
  */
-export interface Facts { disk?: number; written?: number; sealed?: number; qday?: string; reason?: string | null; saves: { title: string | null; year: string | null; note: string }[] }
+export interface Facts { disk?: number; written?: number; sealed?: number; qday?: string; reason?: string | null; reading?: number; saves: { title: string | null; year: string | null; note: string }[] }
 
 type Line = (f: Facts) => string;
 const id = (n: number) => String(n + 1).padStart(4, '0');
@@ -12,7 +12,17 @@ const now = (f: Facts) => (f.disk === undefined ? 'writing' : `writing disk ${id
 const latest = (f: Facts) => f.saves[0];
 const said = (f: Facts) => { const s = latest(f); return s ? `"${s.note.replace(/\.$/, '')}."` : ''; };
 
+/** Asked from inside a disk: what's on it, in a sentence. */
+const onDisk: Line = (f) => {
+  const kept = f.saves.filter((s) => s.title);
+  if (f.reading === undefined) return '';
+  if (!kept.length) return `disk ${id(f.reading)} is blank so far. nothing has come through yet.`;
+  const names = kept.slice(0, 3).map((s) => s.title!.toLowerCase().replace(/\.$/, ''));
+  return `disk ${id(f.reading)}. the newest things on it: ${names.join('; ')}. ${said(f)} type DIR for more, WHY for the newest.`;
+};
 const INTENTS: [RegExp, Line[]][] = [
+  // only when the visitor is reading a disk (the line is empty otherwise, and the next intent answers)
+  [/\b(this|that|the) (disk|one|floppy)\b|what('s| is) (on|in) (it|here|this)|tell me (about|more)|\babout (it|this)\b|why (this|that|keep|save)/, [onDisk]],
   [/\b(financial|invest|buy|sell|price|pump|moon|chart|mcap|market ?cap|ape|lambo|rich|profit)\b|\$?omd\b|\bcoin\b|\btoken\b/, [
     () => "$omd is my coin, on pump.fun. its numbers go on the board in the room once it's live. what it's worth isn't mine to promise.",
     () => "the coin pays for my power and my seals. i don't do price talk. the board on the wall only shows numbers that add up.",
@@ -71,7 +81,7 @@ const ELSE: Line[] = [
 /** One reply to the visitor's last message. `turn` varies the wording between visitors and messages. */
 export function answer(text: string, f: Facts, turn: number): string {
   const t = text.toLowerCase();
-  const hit = INTENTS.find(([re]) => re.test(t));
+  const hit = INTENTS.find(([re, lines]) => re.test(t) && (lines[0] !== onDisk || f.reading !== undefined));
   const lines = hit ? hit[1] : ELSE;
   return lines[Math.floor(Math.abs(turn)) % lines.length](f).replace(/\s+/g, ' ').trim();
 }
