@@ -19,8 +19,11 @@ const api = { register: (...ws: StdWallet[]) => { for (const w of ws) if (!found
 window.addEventListener('wallet-standard:register-wallet', ((e: CustomEvent<(a: typeof api) => void>) => e.detail(api)) as EventListener);
 window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: api }));
 
+/** While previewing, only the preview wallet is offered (a real wallet would be asked to sign what isn't real). */
+export const walletRules: { only?: string } = {};
 /** Installed Solana wallets that can sign transactions. */
-export const wallets = () => found.filter((w) => w.features['standard:connect'] && w.features['solana:signTransaction'] && w.chains.some((c) => c.startsWith('solana:')));
+export const wallets = () => found.filter((w) => w.features['standard:connect'] && w.features['solana:signTransaction'] && w.chains.some((c) => c.startsWith('solana:'))
+  && (!walletRules.only || w.name === walletRules.only));
 export const onWallets = (f: () => void) => { listeners.add(f); return () => listeners.delete(f); };
 
 export interface Connected { wallet: StdWallet; account: Account; address: string; name: string; icon: string }

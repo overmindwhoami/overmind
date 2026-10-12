@@ -8,6 +8,7 @@
  */
 import { b64ToBytes, bytesToB64, type Launchpad, type LpCoin, type LpStatus, type Sent } from '../archive/launchpad';
 import { connect, onWallets, session, short, signAll, walletBrowserLinks, wallets } from './wallet';
+import { isPreviewId } from '../preview';
 
 const DRAFT = 'overmind.launch-draft';
 interface Draft { name: string; ticker: string; about: string; x: string; web: string }
@@ -88,7 +89,7 @@ export class LaunchSheet {
         <p class="sheet__voice">&gt; $${esc(this.done.ticker.toLowerCase())} is live. its disk is on my wall, and i've written down who holds it.</p>
         <div class="sheet__actions">
           <button class="sheet__btn sheet__btn--primary" data-wall type="button">see it on the wall</button>
-          <a class="sheet__btn" href="https://pump.fun/coin/${this.done.mint}" target="_blank" rel="noopener">pump.fun ↗</a>
+          ${isPreviewId(this.done.mint) ? '<span class="sheet__fine">on pump.fun once it\'s real</span>' : `<a class="sheet__btn" href="https://pump.fun/coin/${this.done.mint}" target="_blank" rel="noopener">pump.fun ↗</a>`}
         </div>
         <form class="lp__buy" data-buy>
           <label>first buy <input name="sol" inputmode="decimal" value="0.1" aria-label="SOL to spend"> SOL</label>
@@ -289,11 +290,11 @@ export class CoinSheet {
       <ol class="coin__snaps">${list.map((s) => `
         <li><span class="coin__n">#${s.n}</span> <span>${new Date(s.at).toISOString().slice(0, 16).replace('T', ' ')}</span> <span>${s.holders} holders</span>
           <span class="coin__fp">sha256 ${s.fingerprint.slice(0, 10)}…</span>
-          ${s.tx ? `<a href="https://explorer.solana.com/tx/${s.tx}" target="_blank" rel="noopener">sealed ↗</a>` : '<span class="coin__pending">seal pending</span>'}
+          ${s.tx ? (isPreviewId(s.tx) ? '<span>sealed</span>' : `<a href="https://explorer.solana.com/tx/${s.tx}" target="_blank" rel="noopener">sealed ↗</a>`) : '<span class="coin__pending">seal pending</span>'}
           <button class="sheet__link" data-check="${s.n}" data-fp="${s.fingerprint}" type="button">check</button><span class="coin__match" data-match="${s.n}"></span></li>`).join('') || '<li>the first snapshot is being taken.</li>'}
       </ol>
       <div class="sheet__actions">
-        <a class="sheet__btn sheet__btn--primary" href="${c.pump}" target="_blank" rel="noopener">pump.fun ↗</a>
+        ${isPreviewId(c.mint) ? '<span class="sheet__btn sheet__btn--primary is-preview" aria-disabled="true">pump.fun · preview</span>' : `<a class="sheet__btn sheet__btn--primary" href="${c.pump}" target="_blank" rel="noopener">pump.fun ↗</a>`}
         <button class="sheet__btn" data-share type="button">share</button>
       </div>
       ${linkRow(c.links)}`;

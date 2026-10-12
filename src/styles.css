@@ -513,3 +513,16 @@ a.share[data-image]::before { content: '↓ '; }
 .mint__ticket { padding: 12px 0 4px; margin-bottom: 8px; border-top: 1px solid rgb(242 242 242 / 10%); border-bottom: 1px solid rgb(242 242 242 / 10%); }
 .mint__load { position: relative; overflow: hidden; }
 .mint__load input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+/* Preview (?preview): a bar across the top saying what's simulated, with the way out */
+.preview-bar {
+  position: fixed; top: calc(6px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 40;
+  display: flex; gap: 14px; align-items: center; padding: 5px 12px; border: 1px solid rgb(242 242 242 / 35%); border-radius: 999px;
+  background: rgb(10 10 10 / 72%); backdrop-filter: blur(6px); color: rgb(242 242 242 / 85%);
+  font: 11px/1.2 var(--font-mono, ui-monospace, Menlo, monospace); letter-spacing: 0.06em; white-space: nowrap; pointer-events: none;
+}
+.preview-bar b { color: #f2c14e; font-weight: 700; }
+.preview-bar a { color: inherit; pointer-events: auto; }
+.preview-bar__short { display: none; }
+@media (max-width: 640px) { .preview-bar { top: calc(14px + env(safe-area-inset-top, 0px)); left: auto; right: 44px; transform: none; padding: 3px 9px; gap: 10px; font-size: 10px; } .preview-bar__long { display: none; } .preview-bar__short { display: inline; } }
+.sheet__btn.is-preview { opacity: 0.5; cursor: default; }

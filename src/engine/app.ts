@@ -16,6 +16,7 @@ import { Sound } from '../audio/sound';
 import { SimArchive, fmtDisk, fmtTime, type Archive } from '../archive/sim';
 import { sourceName, type Activity, type Coin } from '../archive/types';
 import { BLUR_EVENT, FOCUS_EVENT, READ_EVENT } from '../ui/indexNav';
+import { PREVIEW, PREVIEW_API, simulated } from '../preview';
 import { WriteLog } from '../ui/writeLog';
 import { Story, type Line } from '../ui/story';
 import { Walkthrough, type Rect, type TourStop } from '../ui/walkthrough';
@@ -278,7 +279,8 @@ export class App {
     // the terminal: one conversation for the visit; typing goes to the screen as it's typed
     this.terminal = new Terminal(this.archive, (this.archive as { endpoint?: string }).endpoint, () => this.station?.touch());
     // the launchpad: the launch sheet at the duplicator, the coin sheet at the wall (the live service only)
-    const endpoint = (this.archive as { endpoint?: string }).endpoint;
+    // previewing (or no server): the launchpad and the books are answered in the page (src/preview.ts)
+    const endpoint = (this.archive as { endpoint?: string }).endpoint ?? (simulated.on ? PREVIEW_API : undefined);
     this.lp = endpoint ? new Launchpad(endpoint) : undefined;
     this.launchSheet = new LaunchSheet(this.lp, {
       lcd: (a, b) => this.room?.duplicator.lcd.print(a, b),
@@ -772,7 +774,7 @@ export class App {
     if (!this.archive.coin) return;
     const c = await this.archive.coin();
     if (c) { this.coin = c; this.room.boardRows = coinRows(c); }
-    window.setTimeout(() => void this.watchCoin(), 60_000);
+    window.setTimeout(() => void this.watchCoin(), PREVIEW ? 8_000 : 60_000); // previewing: the board moves while you watch
   }
   /** Prints the current spread on the manual; the receipts page is filled from the live archive. */
   private async printDocs() {
