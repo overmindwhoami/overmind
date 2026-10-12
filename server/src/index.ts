@@ -33,6 +33,7 @@ import { migrateNominations, mine, nominate } from './nominate.js';
 import { lpJobs, lpRoute } from './lp/routes.js';
 import { migrateLaunchpad } from './lp/coins.js';
 import { count, migrateStats, stats, statsPage } from './stats.js';
+import { scheduleBackups } from './backup.js';
 import { createHash } from 'node:crypto';
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -311,6 +312,7 @@ await migrate();
 await migrateNominations();
 await migrateLaunchpad();
 const statsKey = await migrateStats();
+scheduleBackups();
 setInterval(() => { lpJobs().catch((e) => console.warn('launchpad jobs failed', e)); }, 5 * 60_000);
 await ensureDisk();
 const w = await signer();

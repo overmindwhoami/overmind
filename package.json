@@ -8,7 +8,8 @@
     "dev": "npm run layout && vite",
     "build": "npm run layout && tsc --noEmit && vite build",
     "preview": "vite preview --port 4173 --strictPort",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "deploy": "bash scripts/deploy.sh"
   },
   "dependencies": {
     "polygon-clipping": "0.15.7",
