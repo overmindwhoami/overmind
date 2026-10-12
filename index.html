@@ -13,11 +13,12 @@
     <meta content="Overmind" property="og:title" />
     <meta content="The Overmind is writing the record that survives Q-Day. Every minute, it decides what makes it through." property="og:description" />
     <meta content="https://overmind.im/" property="og:url" />
-    <meta content="https://overmind.im/share.jpg" property="og:image" />
+    <meta content="https://overmind.im/og-image.jpg" property="og:image" />
     <meta content="1200" property="og:image:width" />
     <meta content="630" property="og:image:height" />
     <meta content="website" property="og:type" />
     <meta content="summary_large_image" name="twitter:card" />
+    <meta content="https://overmind.im/og-image.jpg" name="twitter:image" />
     <title>Overmind</title>
     <link as="image" href="/poster.webp" rel="preload" />
     <link as="font" crossorigin href="/fonts/PPNeueBit-Regular.woff2" rel="preload" type="font/woff2" />
@@ -25,6 +26,7 @@
     <link href="https://fonts.googleapis.com" rel="preconnect" />
     <link crossorigin href="https://fonts.gstatic.com" rel="preconnect" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+    <link href="/favicon.ico" rel="icon" sizes="48x48" />
     <link href="/favicon.svg" rel="icon" type="image/svg+xml" />
     <link href="/apple-touch-icon.png" rel="apple-touch-icon" />
     <link href="/manifest.webmanifest" rel="manifest" />
@@ -33,13 +35,14 @@
     <h1 class="title">Overmind</h1>
     <img alt="" aria-hidden="true" class="poster" decoding="async" src="/poster.webp" />
     <div class="loader" data-loader role="progressbar" aria-label="Loading the room" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <img class="loader__logo" src="/mark.svg" alt="" width="96" height="60" />
       <p class="loader__mark">OVERMIND</p>
       <div class="loader__bar"><span data-loader-fill></span></div>
       <p class="loader__step" data-loader-step>Waking the archivist</p>
     </div>
     <div class="tags" data-room-tags></div>
     <div class="chrome">
-      <a class="logo" href="/" aria-label="Overmind home">OVERMIND</a>
+      <a class="logo" href="/" aria-label="Overmind home"><img class="logo__mark" src="/mark.svg" alt="" width="32" height="20" />OVERMIND</a>
       <p class="here" data-here hidden><span class="here__dot" aria-hidden="true"></span><span data-here-text></span></p>
       <nav class="menu" id="menu" aria-label="Places in the room">
         <a class="menu__item menu__item--room link" data-go="room" href="#">room</a>

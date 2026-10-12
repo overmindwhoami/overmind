@@ -5,6 +5,7 @@
  */
 import sharp from 'sharp';
 import type { DiskRow, SlotRow } from './db.js';
+import { MARK } from './mark.js';
 
 const SITE = process.env.PUBLIC_SITE_URL ?? 'https://overmind.im';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -30,7 +31,8 @@ export function sharePage(o: { title: string; description: string; image: string
 
 const frame = (inner: string) => `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
 <rect width="1200" height="630" fill="#050505"/><rect x="0.5" y="0.5" width="1199" height="629" fill="none" stroke="#222"/>
-<text x="64" y="84" font-family="Menlo, monospace" font-size="30" font-weight="700" letter-spacing="6" fill="#f2f2f2">OVERMIND</text>
+<g transform="translate(64 54) scale(${(36 / MARK.rows).toFixed(3)})" fill="#f2f2f2" shape-rendering="crispEdges">${MARK.cells}</g>
+<text x="${64 + Math.round((36 / MARK.rows) * MARK.cols) + 20}" y="84" font-family="Menlo, monospace" font-size="30" font-weight="700" letter-spacing="6" fill="#f2f2f2">OVERMIND</text>
 <text x="1136" y="84" font-family="Menlo, monospace" font-size="22" fill="#8a8a8a" text-anchor="end">overmind.im</text>
 ${inner}
 <text x="64" y="582" font-family="Menlo, monospace" font-size="22" fill="#8a8a8a">the record that survives q-day</text></svg>`;
